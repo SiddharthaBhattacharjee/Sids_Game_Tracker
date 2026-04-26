@@ -8,13 +8,16 @@ import {
   ImageOff,
   KeyRound,
   Loader2,
+  Moon,
   RefreshCw,
   Save,
   Settings,
   Sparkles,
+  Sun,
   Upload,
   XCircle
 } from "lucide-react";
+import Galaxy from './backgrounds/dark.jsx';
 import {
   clearConfig,
   downloadConfig,
@@ -358,6 +361,10 @@ function ValidationStatus({ state }) {
 
 function AppShell({ config, onSettings }) {
   const [reloadToken, setReloadToken] = useState(0);
+  const [darkMode, setDarkMode] = useState(() => {
+    const saved = localStorage.getItem('darkMode');
+    return saved ? JSON.parse(saved) : false;
+  });
   const [sheetState, setSheetState] = useState({
     status: "loading",
     games: [],
@@ -374,6 +381,11 @@ function AppShell({ config, onSettings }) {
     data: null
   });
   const manualLlmInFlightRef = useRef(false);
+
+  useEffect(() => {
+    localStorage.setItem('darkMode', JSON.stringify(darkMode));
+    document.documentElement.classList.toggle('dark', darkMode);
+  }, [darkMode]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -857,15 +869,20 @@ function AppShell({ config, onSettings }) {
 
   return (
     <main className="appShell">
+      {darkMode && <Galaxy transparent={false} style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: -1 }} />}
       <header className="appHeader">
         <div className="brandLockup">
           <Gamepad2 size={27} />
           <div>
             <p className="eyebrow">Local browser app</p>
-            <h1>Game Insights Tracker</h1>
+            <h1>SGT (Sid's Game Tracker)</h1>
           </div>
         </div>
         <div className="headerActions">
+          <button className="ghostButton" type="button" onClick={() => setDarkMode(!darkMode)}>
+            {darkMode ? <Sun size={17} /> : <Moon size={17} />}
+            {darkMode ? 'Light' : 'Dark'}
+          </button>
           <button className="ghostButton" type="button" onClick={retryAll}>
             <RefreshCw size={17} />
             Refresh
@@ -953,12 +970,8 @@ function DashboardSection({ loading, analytics, rawgState, rawgConfigured }) {
         <DashboardSkeleton />
       ) : (
         <div className="dashboardGrid">
-          <article className="metricTile">
-            <span>Total games played</span>
-            <strong>{analytics.total}</strong>
-          </article>
-          <PieTile title="Status distribution" data={analytics.statusDistribution} />
-          <PieTile title="Platform distribution" data={analytics.platformDistribution} />
+          <StatusTile data={analytics.statusDistribution} />
+          <PlatformTile data={analytics.platformDistribution} />
           {rawgConfigured ? (
             rawgState.status === "loading" || rawgState.status === "idle" ? (
               <RawgLoadingTile rawgState={rawgState} />
@@ -1008,6 +1021,153 @@ function PieTile({ title, data }) {
             ))}
           </ul>
         </div>
+      ) : (
+        <p className="mutedText">No data yet.</p>
+      )}
+    </article>
+  );
+}
+
+function StatusTile({ data }) {
+  const total = data.reduce((sum, item) => sum + item.value, 0);
+  const statusMap = Object.fromEntries(data.map((item) => [item.label, item.value]));
+
+  const completed = statusMap["Finished"] ?? 0;
+  const dropped = statusMap["Dropped"] ?? 0;
+  const onHold = statusMap["On Hold"] ?? 0;
+
+  const completionPct = total > 0 ? ((completed / total) * 100).toFixed(1) : 0;
+  const dropPct = total > 0 ? ((dropped / total) * 100).toFixed(1) : 0;
+  const holdPct = total > 0 ? ((onHold / total) * 100).toFixed(1) : 0;
+
+  return (
+    <article className="chartTile">
+      <h3>Status distribution</h3>
+      {data.length > 0 ? (
+        <>
+          <div className="chartContent">
+            <PieChart data={data} />
+            <ul className="legendList">
+              {data.map((item) => (
+                <li key={item.label}>
+                  <span className="legendSwatch" style={{ background: item.color }} />
+                  <span>{item.label}</span>
+                  <strong>{item.value}</strong>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div
+  className="tileFooter"
+  style={{
+    marginTop: "12px",
+    paddingTop: "10px",
+    borderTop: "1px solid rgba(255,255,255,0.08)",
+    display: "flex",
+    flexDirection: "column",
+    gap: "8px"
+  }}
+>
+  {[
+    { label: "Finished", value: completionPct, color: "#22c55e" },
+    { label: "Dropped", value: dropPct, color: "#ef4444" },
+    { label: "On Hold", value: holdPct, color: "#f59e0b" }
+  ].map((item) => (
+    <div
+      key={item.label}
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        fontSize: "13px"
+      }}
+    >
+      <span style={{ opacity: 0.7 }}>{item.label}</span>
+      <span
+        style={{
+          fontWeight: "600",
+          color: item.color
+        }}
+      >
+        {item.value}%
+      </span>
+    </div>
+  ))}
+</div>
+        </>
+      ) : (
+        <p className="mutedText">No data yet.</p>
+      )}
+    </article>
+  );
+}
+
+function PlatformTile({ data }) {
+  const topPlatforms = data.sort((a, b) => b.value - a.value).slice(0, 3);
+
+  return (
+    <article className="chartTile">
+      <h3>Platform distribution</h3>
+      {data.length > 0 ? (
+        <>
+          <div className="chartContent">
+            <PieChart data={data} />
+            <ul className="legendList">
+              {data.map((item) => (
+                <li key={item.label}>
+                  <span className="legendSwatch" style={{ background: item.color }} />
+                  <span>{item.label}</span>
+                  <strong>{item.value}</strong>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div
+            className="tileFooter"
+            style={{
+              marginTop: "12px",
+              paddingTop: "10px",
+              borderTop: "1px solid rgba(255,255,255,0.08)",
+              display: "flex",
+              flexDirection: "column",
+              gap: "8px"
+            }}
+          >
+            {topPlatforms.map((platform, index) => (
+              <div
+                key={platform.label}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px"
+                }}
+              >
+                <span
+                  style={{
+                    width: "22px",
+                    height: "22px",
+                    borderRadius: "6px",
+                    background: platform.color,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "12px",
+                    fontWeight: "600",
+                    color: "#000"
+                  }}
+                >
+                  {index + 1}
+                </span>
+
+                <span style={{ flex: 1 }}>{platform.label}</span>
+
+                <span style={{ fontWeight: "600", opacity: 0.8 }}>
+                  {platform.value}
+                </span>
+              </div>
+            ))}
+          </div>
+        </>
       ) : (
         <p className="mutedText">No data yet.</p>
       )}

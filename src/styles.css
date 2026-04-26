@@ -27,6 +27,18 @@
   --shadow: 0 18px 48px rgba(34, 36, 38, 0.08);
 }
 
+.dark {
+  --bg: #1a1a1a;
+  --surface: #2a2a2a;
+  --surface-soft: #333333;
+  --ink: #e0e0e0;
+  --muted: #a0a0a0;
+  --line: #404040;
+  --line-strong: #555555;
+  --shadow: 0 18px 48px rgba(0, 0, 0, 0.3);
+  color: var(--ink);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -35,7 +47,43 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  background: var(--bg);
+  position: relative;
+  overflow-x: hidden;
 }
+
+html.dark body {
+  background: transparent;
+}
+
+html:not(.dark) body {
+  background-color: #bfdfec;
+  background-repeat: repeat-x;
+  background-image: url("https://i.stack.imgur.com/b7z29.png");
+  background-attachment: fixed;
+  animation: movement 120s linear infinite;
+}
+
+@keyframes movement {
+  0% {
+    background-position: 0px 0px;
+  }
+  100% {
+    background-position: 560px 0px;
+  }
+}
+
+@keyframes daySky {
+  0%, 100% { background: linear-gradient(to bottom, #87CEEB 0%, #98FB98 100%); }
+  50% { background: linear-gradient(to bottom, #FFD700 0%, #87CEEB 100%); }
+}
+
+@keyframes nightSky {
+  0%, 100% { background: linear-gradient(to bottom, #191970 0%, #000000 100%); }
+  50% { background: linear-gradient(to bottom, #000080 0%, #191970 100%); }
+}
+
+
 
 button,
 input {
@@ -102,8 +150,13 @@ p {
 }
 
 .framedTool {
-  background: var(--surface);
+  background: rgba(255, 255, 255, 0.9);
   border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.dark .framedTool {
+  background: rgba(42, 42, 42, 0.9);
   border-radius: 8px;
   box-shadow: var(--shadow);
 }
@@ -129,13 +182,16 @@ p {
 }
 
 .appHeader {
-  background: rgba(246, 247, 241, 0.9);
+  background: rgba(255, 255, 255, 0.9);
   margin: 0 auto 26px;
   max-width: 1180px;
-  padding: 8px 0;
-  position: sticky;
-  top: 0;
+  padding: 12px 16px;
+  border-radius: 12px;
   z-index: 5;
+}
+
+.dark .appHeader {
+  background: rgba(42, 42, 42, 0.9);
 }
 
 .brandLockup,
@@ -182,9 +238,9 @@ h1 {
 }
 
 .secondaryButton {
-  background: #e8f2f2;
-  border: 1px solid #b8dcdc;
-  color: #075e60;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  color: var(--ink);
 }
 
 .ghostButton {
@@ -296,10 +352,10 @@ h1 {
 
 .sectionHeader > span,
 .sectionHeaderMeta > span {
-  background: #edf1e6;
-  border: 1px solid #d2dcc2;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
   border-radius: 999px;
-  color: #49612d;
+  color: var(--ink);
   font-size: 0.78rem;
   font-weight: 800;
   padding: 6px 10px;
@@ -325,9 +381,17 @@ h1 {
 .gameCard,
 .llmPanel,
 .recommendationCard {
-  background: var(--surface);
+  background: rgba(255, 255, 255, 0.9);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 12px;
+}
+
+.dark .metricTile,
+.dark .chartTile,
+.dark .gameCard,
+.dark .llmPanel,
+.dark .recommendationCard {
+  background: rgba(42, 42, 42, 0.9);
 }
 
 .metricTile,
@@ -482,6 +546,9 @@ h1 {
 }
 
 .gameCard {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
   display: grid;
   gap: 14px;
   grid-template-columns: 102px minmax(0, 1fr);
@@ -623,10 +690,10 @@ h1 {
 }
 
 .genreChip {
-  background: #eef5f5;
-  border: 1px solid #d1e7e6;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
   border-radius: 999px;
-  color: #14686a;
+  color: var(--ink);
   font-size: 0.75rem;
   font-weight: 800;
   padding: 4px 8px;
@@ -644,7 +711,7 @@ h1 {
 
 .reviewText,
 .recommendationCard p {
-  color: #424541;
+  color: var(--ink);
   line-height: 1.45;
   overflow-wrap: anywhere;
 }
@@ -655,7 +722,7 @@ h1 {
 }
 
 .llmText {
-  color: #31342f;
+  color: var(--ink);
   line-height: 1.62;
   white-space: pre-wrap;
 }

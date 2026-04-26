@@ -60,7 +60,7 @@ export async function generateRecommendations(config, games, preferenceSignals, 
       {
         role: "user",
         content:
-          "Recommend exactly 10 NEW games not present in the existingGames list.\n\nOutput contract:\n- Start immediately with the exact line FINAL_RECOMMENDATIONS.\n- Then return exactly 10 numbered lines.\n- Each line must use this exact format: 1. Game Title | One short user-facing rationale\n- Do not output JSON.\n- Do not output markdown.\n- Do not explain your choices before the list.\n- Do not count words.\n- Do not mention this prompt.\n- Each title must be a real game and must not appear in existingGames.\n- Each rationale must be 12 to 28 words, focused on gameplay feel, pacing, and structure.\n\nexistingGames:\n" +
+          "Recommend exactly 9 NEW games not present in the existingGames list.\n\nOutput contract:\n- Start immediately with the exact line FINAL_RECOMMENDATIONS.\n- Then return exactly 9 numbered lines.\n- Each line must use this exact format: 1. Game Title | One short user-facing rationale\n- Do not output JSON.\n- Do not output markdown.\n- Do not explain your choices before the list.\n- Do not count words.\n- Do not mention this prompt.\n- Each title must be a real game and must not appear in existingGames.\n- Each rationale must be 12 to 28 words, focused on gameplay feel, pacing, and structure.\n\nexistingGames:\n" +
           JSON.stringify(existingGames, null, 2) +
           "\n\npreferenceSignals:\n" +
           stripPrivateReasoningBlocks(preferenceSignals)
@@ -75,7 +75,7 @@ export async function generateRecommendations(config, games, preferenceSignals, 
   const existingSet = new Set(existingGames.map(normalizeName));
   const filtered = recommendations
     .filter((item) => item.game && !existingSet.has(normalizeName(item.game)))
-    .slice(0, 10);
+    .slice(0, 9);
 
   if (filtered.length === 0) {
     throw new Error(
@@ -83,11 +83,11 @@ export async function generateRecommendations(config, games, preferenceSignals, 
     );
   }
 
-  if (filtered.length < 10) {
+  if (filtered.length < 9) {
     throw new Error(
       `LLM returned ${filtered.length} valid new recommendation${
         filtered.length === 1 ? "" : "s"
-      } instead of 10 -> retry recommendations.`
+      } instead of 9 -> retry recommendations.`
     );
   }
 
