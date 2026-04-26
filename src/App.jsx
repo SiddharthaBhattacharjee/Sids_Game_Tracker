@@ -15,7 +15,8 @@ import {
   Sparkles,
   Sun,
   Upload,
-  XCircle
+  XCircle,
+  ExternalLink,
 } from "lucide-react";
 import Galaxy from './backgrounds/dark.jsx';
 import {
@@ -118,6 +119,56 @@ export default function App() {
       config={config}
       onSettings={() => setShowSetup(true)}
     />
+  );
+}
+
+function Tooltip({ children, content }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <span style={{ position: "relative", display: "inline-block" }}>
+      <span
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+        onClick={() => setOpen((o) => !o)} // mobile support
+        style={{
+          cursor: "pointer",
+          marginLeft: "6px",
+          fontSize: "14px",
+          border: "1px solid rgba(255,255,255,0.2)",
+          borderRadius: "50%",
+          width: "18px",
+          height: "18px",
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          opacity: 0.7
+        }}
+      >
+        ?
+      </span>
+
+      {open && (
+        <div
+          style={{
+            position: "absolute",
+            top: "120%",
+            left: 0,
+            width: "260px",
+            background: "#111",
+            color: "#fff",
+            padding: "10px",
+            borderRadius: "8px",
+            fontSize: "12px",
+            lineHeight: "1.4",
+            zIndex: 10,
+            boxShadow: "0 4px 20px rgba(0,0,0,0.4)"
+          }}
+        >
+          {content}
+        </div>
+      )}
+    </span>
   );
 }
 
@@ -279,7 +330,71 @@ function SetupScreen({ initialConfig, onSaved, onCancel, onClear }) {
         <div className="setupGrid">
           {FIELD_META.map((field) => (
             <label className="fieldGroup" key={field.key}>
-              <span>{field.label}</span>
+              <span style={{ display: "flex", alignItems: "center" }}>
+  {field.label}
+
+  {field.key === "sheetUrl" && (
+    <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+
+  {field.key === "sheetUrl" && (
+    <>
+      <Tooltip
+        content={
+          <div>
+            <strong>Required Sheet Format:</strong>
+            <br /><br />
+
+            <strong>Columns (exact names):</strong>
+            <ul style={{ paddingLeft: "16px", margin: "6px 0" }}>
+              <li>Game</li>
+              <li>Platform</li>
+              <li>Status</li>
+              <li>Rating</li>
+              <li>Review</li>
+            </ul>
+
+            <strong>Notes:</strong>
+            <ul style={{ paddingLeft: "16px", margin: "6px 0" }}>
+              <li>Sheet must be public</li>
+              <li>Status must match allowed values</li>
+                <ul>
+                  <li>Ongoing</li>
+                  <li>Finished</li>
+                  <li>On Hold</li>
+                  <li>Dropped</li>
+                </ul>
+              <li>Rating must be a single number between 0 and 10</li>
+              <li>No empty rows</li>
+            </ul>
+          </div>
+        }
+      />
+
+      <a
+        href="https://docs.google.com/spreadsheets/d/15gZfPQ2R0MxUcH5Bv6dQwYNq3-Y0I-WB9sh9-KtB9sw/edit?usp=sharing"
+        target="_blank"
+        rel="noopener noreferrer"
+        title="Open template"
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: "18px",
+          height: "18px",
+          borderRadius: "50%",
+          border: "1px solid rgba(255,255,255,0.2)",
+          opacity: 0.7,
+          color: "inherit",          // ← THIS fixes blue
+          textDecoration: "none"     // ← removes underline
+        }}
+      >
+        <ExternalLink size={13} />
+      </a>
+    </>
+  )}
+</span>
+  )}
+</span>
               <input
                 type={field.secret ? "password" : "text"}
                 value={draft[field.key]}
@@ -363,7 +478,7 @@ function AppShell({ config, onSettings }) {
   const [reloadToken, setReloadToken] = useState(0);
   const [darkMode, setDarkMode] = useState(() => {
     const saved = localStorage.getItem('darkMode');
-    return saved ? JSON.parse(saved) : false;
+    return saved ? JSON.parse(saved) : true;
   });
   const [sheetState, setSheetState] = useState({
     status: "loading",
@@ -875,7 +990,7 @@ function AppShell({ config, onSettings }) {
           <Gamepad2 size={27} />
           <div>
             <p className="eyebrow">Local browser app</p>
-            <h1>SGT (Sid's Game Tracker)</h1>
+            <h1>Sid's Game Tracker</h1>
           </div>
         </div>
         <div className="headerActions">
@@ -931,6 +1046,25 @@ function AppShell({ config, onSettings }) {
           />
         </>
       )}
+      <footer
+  style={{
+    marginTop: "40px",
+    padding: "16px",
+    textAlign: "center",
+    fontSize: "12px",
+    opacity: 0.6
+  }}
+>
+  Made with ❤️ by Siddhartha Bhattacharjee •{" "}
+  <a
+    href="/LICENSE"
+    target="_blank"
+    rel="noopener noreferrer"
+    style={{ color: "inherit", textDecoration: "underline" }}
+  >
+    © MIT License
+  </a>
+</footer>
     </main>
   );
 }
@@ -963,7 +1097,7 @@ function DashboardSection({ loading, analytics, rawgState, rawgConfigured }) {
       <SectionHeader
         icon={<Database size={20} />}
         title="Dashboard"
-        badge="Deterministic"
+        badge="Analytics"
       />
 
       {loading || !analytics ? (
@@ -1104,7 +1238,7 @@ function StatusTile({ data }) {
 
 function PlatformTile({ data }) {
   const topPlatforms = data.sort((a, b) => b.value - a.value).slice(0, 3);
-
+  const total = data.reduce((sum, item) => sum + item.value, 0);
   return (
     <article className="chartTile">
       <h3>Platform distribution</h3>
@@ -1162,7 +1296,7 @@ function PlatformTile({ data }) {
                 <span style={{ flex: 1 }}>{platform.label}</span>
 
                 <span style={{ fontWeight: "600", opacity: 0.8 }}>
-                  {platform.value}
+                  {((platform.value / total) * 100).toFixed(1)}%
                 </span>
               </div>
             ))}
@@ -1355,13 +1489,48 @@ function GenreChips({ enrichment, loading }) {
 }
 
 function StarRating({ rating }) {
-  const stars = ratingToStars(rating);
-  const fill = `${Math.max(0, Math.min(100, (stars / 5) * 100))}%`;
+  const stars = ratingToStars(rating); // already correct
+  const fullStars = Math.floor(stars);
+  const halfStar = stars - fullStars >= 0.5;
 
   return (
-    <div className="ratingRow" aria-label={`${stars.toFixed(1)} out of 5 stars`}>
-      <span className="starMeter" style={{ "--star-fill": fill }} />
-      <strong>{stars.toFixed(1)}</strong>
+    <div className="ratingRow" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+      {[1, 2, 3, 4, 5].map((i) => {
+        if (i <= fullStars) {
+          return <span key={i} style={{ color: "#facc15" }}>★</span>; // full
+        }
+
+        if (i === fullStars + 1 && halfStar) {
+          return (
+            <span
+              key={i}
+              style={{
+                position: "relative",
+                display: "inline-block",
+                color: "#555"
+              }}
+            >
+              ★
+              <span
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "50%",
+                  overflow: "hidden",
+                  color: "#facc15"
+                }}
+              >
+                ★
+              </span>
+            </span>
+          );
+        }
+
+        return <span key={i} style={{ color: "#555" }}>★</span>; // empty
+      })}
+
+      <strong style={{ marginLeft: "6px" }}>{stars.toFixed(1)}</strong>
       <span>/ 5</span>
     </div>
   );
@@ -1373,7 +1542,7 @@ function PreferenceSection({ state, waiting, onRegenerate, canRegenerate }) {
       <SectionHeader
         icon={<Sparkles size={20} />}
         title="Derived Player Preferences"
-        badge="LLM"
+        badge="AI"
         action={
           <RegenerateButton
             loading={state.status === "loading"}
@@ -1408,7 +1577,7 @@ function RecommendationSection({
       <SectionHeader
         icon={<KeyRound size={20} />}
         title="Recommended Games"
-        badge="LLM"
+        badge="AI"
         action={
           <RegenerateButton
             loading={state.status === "loading"}

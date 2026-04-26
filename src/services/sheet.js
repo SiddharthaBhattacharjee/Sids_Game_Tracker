@@ -1,4 +1,4 @@
-export const EXPECTED_COLUMNS = ["Game", "Platform", "Status", "Rating (number out of 10)", "Review"];
+export const EXPECTED_COLUMNS = ["Game", "Platform", "Status", "Rating", "Review"];
 export const VALID_STATUSES = ["Finished", "Dropped", "On Hold", "Ongoing"];
 
 export async function fetchSheetGames(sheetUrl, signal) {
@@ -92,7 +92,7 @@ export function parseSheetCsv(csvText) {
 
   rows.slice(1).forEach((row, rowIndex) => {
     const displayRow = rowIndex + 2;
-    const ratingText = getCell(row, indexByColumn.get("Rating (number out of 10)"));
+    const ratingText = getCell(row, indexByColumn.get("Rating"));
     const rating = Number(ratingText);
     const status = getCell(row, indexByColumn.get("Status"));
 

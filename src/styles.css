@@ -61,7 +61,7 @@ html:not(.dark) body {
   background-repeat: repeat-x;
   background-image: url("https://i.stack.imgur.com/b7z29.png");
   background-attachment: fixed;
-  animation: movement 120s linear infinite;
+  animation: movement 270s linear infinite;
 }
 
 @keyframes movement {
@@ -381,7 +381,7 @@ h1 {
 .gameCard,
 .llmPanel,
 .recommendationCard {
-  background: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.95);
   border: 1px solid var(--line);
   border-radius: 12px;
 }
@@ -391,7 +391,7 @@ h1 {
 .dark .gameCard,
 .dark .llmPanel,
 .dark .recommendationCard {
-  background: rgba(42, 42, 42, 0.9);
+  background: rgba(42, 42, 42, 0.95);
 }
 
 .metricTile,

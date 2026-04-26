@@ -31,13 +31,21 @@ export function computeAnalytics(games, enrichments = {}) {
     platformDistribution: toChartData(platformCounts),
     genreDistribution: toChartData(genreCounts),
     topLikedGenres: Object.entries(genreRatings)
-      .map(([genre, value]) => ({
-        genre,
-        average: value.total / value.count,
-        count: value.count
-      }))
-      .sort((a, b) => b.average - a.average || b.count - a.count || a.genre.localeCompare(b.genre))
-      .slice(0, 5)
+  .map(([genre, value]) => {
+    const avg = value.total / value.count;
+    const count = value.count;
+
+    const score = avg * Math.log(count + 1);
+
+    return {
+      genre,
+      average: avg,
+      count,
+      score
+    };
+  })
+  .sort((a, b) => b.score - a.score)
+  .slice(0, 5)
   };
 }
 
