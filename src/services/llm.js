@@ -48,6 +48,7 @@ export async function extractPreferences(config, games, enrichments, signal) {
 
 export async function generateRecommendations(config, games, preferenceSignals, signal) {
   const existingGames = games.map((game) => game.game);
+  await setTimeout(() => {}, 10000); // Simulate delay
   const content = await callChatCompletion({
     label: "recommendations",
     config,
