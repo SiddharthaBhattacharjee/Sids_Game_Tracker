@@ -985,9 +985,18 @@ function AppShell({ config, onSettings }) {
 
     const controller = new AbortController();
     let finished = false;
+    let retryEnabledAfter60s = false;
 
     setRecommendations({ status: "loading", items: [], error: "" });
     setRecommendationEnrichments({});
+
+    // ℹ️ After 60s, allow manual retry while keeping request alive
+    const timeout = setTimeout(() => {
+      if (!finished) {
+        retryEnabledAfter60s = true;
+        console.log("[Game Insights] LLM request still pending after 60s - user can click Regenerate to retry");
+      }
+    }, 60000);
 
     try {
       // Let the API call complete without timeout interruption
@@ -1020,6 +1029,7 @@ function AppShell({ config, onSettings }) {
         });
       }
     } finally {
+      clearTimeout(timeout);
       controller.abort();
 
       // 🔓 unlock AFTER everything is done
