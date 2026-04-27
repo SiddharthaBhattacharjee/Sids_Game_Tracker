@@ -1,8 +1,25 @@
-# 🎮 SGT (Sid's Game Tracker)
+# [🎮 SGT (Sid's Game Tracker)](https://sids-game-tracker.vercel.app/)
+
+<p align="center">
+  <a href="./LICENSE.txt">
+  <img src="https://img.shields.io/badge/license-MIT Public License-blue.svg">
+  </a>
+  <a href="https://sids-game-tracker.vercel.app/">
+    <img alt="Website" src="https://img.shields.io/badge/-website-blue">
+  </a>
+  <a href="http://makeapullrequest.com">
+    <img alt="Pull Requests Welcome" src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat">
+  </a>
+  
+</p>
 
 A local-first web app that transforms your personal game list into meaningful insights, visualizations, and AI-powered recommendations.
 
 No need to upload your data. Just your Google Sheet processed locally on your device.
+
+---
+### 🔗 [Available to use here](https://sids-game-tracker.vercel.app/)
+[![](./public/preview.png)](https://sids-game-tracker.vercel.app/)
 
 ---
 
@@ -177,6 +194,10 @@ but attribution is required.
 
 Made with ❤️ by **Siddhartha Bhattacharjee**
 
+If you have any questions or feedback about the Website, please don't hesitate to contact Me - 
+<br>
+<a href="https://siddhartha-portfolio.vercel.app/"> 🔗 Siddhartha Bhattacharjee </a> <br>
+
 ---
 
 ## 🔥 Why this exists
@@ -190,8 +211,10 @@ This one:
 * suggests what to play next
 * a tool to gain insight on your data
 
+(Actually I built it for myself and decided why not share LOL 😉)
+
 ---
 
 ## ⭐ If you find this useful
 
-Star the repo. Or better -> actually use it.
+Star the repo. Or better -> Actually use it.
