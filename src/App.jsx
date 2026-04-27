@@ -331,70 +331,70 @@ function SetupScreen({ initialConfig, onSaved, onCancel, onClear }) {
           {FIELD_META.map((field) => (
             <label className="fieldGroup" key={field.key}>
               <span style={{ display: "flex", alignItems: "center" }}>
-  {field.label}
+                {field.label}
 
-  {field.key === "sheetUrl" && (
-    <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                {field.key === "sheetUrl" && (
+                  <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
 
-  {field.key === "sheetUrl" && (
-    <>
-      <Tooltip
-        content={
-          <div>
-            <strong>Required Sheet Format:</strong>
-            <br /><br />
+                    {field.key === "sheetUrl" && (
+                      <>
+                        <Tooltip
+                          content={
+                            <div>
+                              <strong>Required Sheet Format:</strong>
+                              <br /><br />
 
-            <strong>Columns (exact names):</strong>
-            <ul style={{ paddingLeft: "16px", margin: "6px 0" }}>
-              <li>Game</li>
-              <li>Platform</li>
-              <li>Status</li>
-              <li>Rating</li>
-              <li>Review</li>
-            </ul>
+                              <strong>Columns (exact names):</strong>
+                              <ul style={{ paddingLeft: "16px", margin: "6px 0" }}>
+                                <li>Game</li>
+                                <li>Platform</li>
+                                <li>Status</li>
+                                <li>Rating</li>
+                                <li>Review</li>
+                              </ul>
 
-            <strong>Notes:</strong>
-            <ul style={{ paddingLeft: "16px", margin: "6px 0" }}>
-              <li>Sheet must be public</li>
-              <li>Status must match allowed values</li>
-                <ul>
-                  <li>Ongoing</li>
-                  <li>Finished</li>
-                  <li>On Hold</li>
-                  <li>Dropped</li>
-                </ul>
-              <li>Rating must be a single number between 0 and 10</li>
-              <li>No empty rows</li>
-            </ul>
-          </div>
-        }
-      />
+                              <strong>Notes:</strong>
+                              <ul style={{ paddingLeft: "16px", margin: "6px 0" }}>
+                                <li>Sheet must be public</li>
+                                <li>Status must match allowed values</li>
+                                <ul>
+                                  <li>Ongoing</li>
+                                  <li>Finished</li>
+                                  <li>On Hold</li>
+                                  <li>Dropped</li>
+                                </ul>
+                                <li>Rating must be a single number between 0 and 10</li>
+                                <li>No empty rows</li>
+                              </ul>
+                            </div>
+                          }
+                        />
 
-      <a
-        href="https://docs.google.com/spreadsheets/d/15gZfPQ2R0MxUcH5Bv6dQwYNq3-Y0I-WB9sh9-KtB9sw/edit?usp=sharing"
-        target="_blank"
-        rel="noopener noreferrer"
-        title="Open template"
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          justifyContent: "center",
-          width: "18px",
-          height: "18px",
-          borderRadius: "50%",
-          border: "1px solid rgba(255,255,255,0.2)",
-          opacity: 0.7,
-          color: "inherit",          // ← THIS fixes blue
-          textDecoration: "none"     // ← removes underline
-        }}
-      >
-        <ExternalLink size={13} />
-      </a>
-    </>
-  )}
-</span>
-  )}
-</span>
+                        <a
+                          href="https://docs.google.com/spreadsheets/d/15gZfPQ2R0MxUcH5Bv6dQwYNq3-Y0I-WB9sh9-KtB9sw/edit?usp=sharing"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="Open template"
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            width: "18px",
+                            height: "18px",
+                            borderRadius: "50%",
+                            border: "1px solid rgba(255,255,255,0.2)",
+                            opacity: 0.7,
+                            color: "inherit",          // ← THIS fixes blue
+                            textDecoration: "none"     // ← removes underline
+                          }}
+                        >
+                          <ExternalLink size={13} />
+                        </a>
+                      </>
+                    )}
+                  </span>
+                )}
+              </span>
               <input
                 type={field.secret ? "password" : "text"}
                 value={draft[field.key]}
@@ -475,6 +475,7 @@ function ValidationStatus({ state }) {
 }
 
 function AppShell({ config, onSettings }) {
+  const hasAutoGeneratedRef = useRef(false);
   const [reloadToken, setReloadToken] = useState(0);
   const [darkMode, setDarkMode] = useState(() => {
     const saved = localStorage.getItem('darkMode');
@@ -495,6 +496,8 @@ function AppShell({ config, onSettings }) {
     hash: "",
     data: null
   });
+  const [preferenceRetries, setPreferenceRetries] = useState(0);
+  const [recommendationRetries, setRecommendationRetries] = useState(0);
   const manualLlmInFlightRef = useRef(false);
 
   useEffect(() => {
@@ -512,6 +515,8 @@ function AppShell({ config, onSettings }) {
     setRecommendations(waitingRecommendations);
     setRecommendationEnrichments({});
     setLlmCacheState({ status: "idle", hash: "", data: null });
+    setPreferenceRetries(0);
+    setRecommendationRetries(0);
 
     fetchSheetGames(config.sheetUrl, controller.signal)
       .then((games) => {
@@ -740,15 +745,15 @@ function AppShell({ config, onSettings }) {
 
   useEffect(() => {
     if (manualLlmInFlightRef.current) {
-      return undefined;
+      return;
     }
 
+    // Don't auto-retry if already in error state (user must click Regenerate)
     if (
       preferences.status !== "ready" ||
-      recommendations.status === "ready" ||
-      recommendations.status === "loading"
+      recommendations.status !== "idle"
     ) {
-      return undefined;
+      return;
     }
 
     if (hasCachedRecommendations(llmCacheState.data)) {
@@ -757,25 +762,37 @@ function AppShell({ config, onSettings }) {
         items: llmCacheState.data.recommendationsItems,
         error: ""
       });
-      return undefined;
+      return;
     }
 
     const controller = new AbortController();
+    let finished = false;
+
     setRecommendations({ status: "loading", items: [], error: "" });
     setRecommendationEnrichments({});
 
-    generateRecommendations(config, sheetState.games, preferences.text, controller.signal)
+    generateRecommendations(
+      config,
+      sheetState.games,
+      preferences.text,
+      controller.signal
+    )
       .then((items) => {
+        finished = true;
         setRecommendations({ status: "ready", items, error: "" });
+
         saveCachedLlmData(llmCacheState.hash, {
           preferencesText: preferences.text,
           recommendationsItems: items
         });
       })
       .catch((error) => {
+        finished = true;
+
         if (error.name === "AbortError") {
           return;
         }
+
         setRecommendations({
           status: "error",
           items: [],
@@ -783,7 +800,18 @@ function AppShell({ config, onSettings }) {
         });
       });
 
-    return () => controller.abort();
+    // ℹ️ After 60s, enable manual retry button while keeping request alive
+    const timeout = setTimeout(() => {
+      if (!finished) {
+        // Request is still pending - we just log this, don't interrupt
+        console.log("[Game Insights] LLM request still pending after 60s - user can retry manually");
+      }
+    }, 60000);
+
+    return () => {
+      controller.abort();
+      clearTimeout(timeout);
+    };
   }, [
     config,
     llmCacheState.data,
@@ -864,6 +892,15 @@ function AppShell({ config, onSettings }) {
       return;
     }
 
+    if (preferenceRetries >= 3) {
+      setPreferences({
+        status: "error",
+        text: "",
+        error: "Maximum retry attempts (3) reached. Check your LLM configuration and try again later."
+      });
+      return;
+    }
+
     manualLlmInFlightRef.current = true;
     setPreferences({ status: "loading", text: "", error: "" });
     setRecommendations(waitingRecommendations);
@@ -880,16 +917,19 @@ function AppShell({ config, onSettings }) {
         controller.signal
       );
       setPreferences({ status: "ready", text: nextPreferences, error: "" });
+      setPreferenceRetries(0); // Reset on success
       saveCachedLlmData(llmCacheState.hash, {
         preferencesText: nextPreferences,
         recommendationsItems: []
       });
     } catch (error) {
       if (error.name !== "AbortError") {
+        const nextRetryCount = preferenceRetries + 1;
+        setPreferenceRetries(nextRetryCount);
         setPreferences({
           status: "error",
           text: "",
-          error: error.message || "Preference extraction failed."
+          error: `${error.message || "Preference extraction failed."} (Attempt ${nextRetryCount}/3)`
         });
       }
       manualLlmInFlightRef.current = false;
@@ -906,20 +946,19 @@ function AppShell({ config, onSettings }) {
         controller.signal
       );
       setRecommendations({ status: "ready", items, error: "" });
+      setRecommendationRetries(0); // Reset on success
       saveAndHydrateLlmCache({
         preferencesText: nextPreferences,
         recommendationsItems: items
       });
     } catch (error) {
       if (error.name !== "AbortError") {
+        const nextRetryCount = recommendationRetries + 1;
+        setRecommendationRetries(nextRetryCount);
         setRecommendations({
           status: "error",
           items: [],
-          error: error.message || "Recommendation generation failed."
-        });
-        saveAndHydrateLlmCache({
-          preferencesText: nextPreferences,
-          recommendationsItems: []
+          error: `${error.message || "Recommendation generation failed."} (Attempt ${nextRetryCount}/3)`
         });
       }
     } finally {
@@ -932,33 +971,58 @@ function AppShell({ config, onSettings }) {
       return;
     }
 
+    if (recommendationRetries >= 3) {
+      setRecommendations({
+        status: "error",
+        items: [],
+        error: "Maximum retry attempts (3) reached. Check your LLM configuration and try again later."
+      });
+      return;
+    }
+
+    // 🔒 lock auto effect
     manualLlmInFlightRef.current = true;
+
+    const controller = new AbortController();
+    let finished = false;
+
     setRecommendations({ status: "loading", items: [], error: "" });
     setRecommendationEnrichments({});
 
-    const controller = new AbortController();
-
     try {
+      // Let the API call complete without timeout interruption
       const items = await generateRecommendations(
         config,
         sheetState.games,
         preferences.text,
         controller.signal
       );
+
+      finished = true;
+
       setRecommendations({ status: "ready", items, error: "" });
+      setRecommendationRetries(0); // Reset on success
+
       saveAndHydrateLlmCache({
         preferencesText: preferences.text,
         recommendationsItems: items
       });
     } catch (error) {
+      finished = true;
+
       if (error.name !== "AbortError") {
+        const nextRetryCount = recommendationRetries + 1;
+        setRecommendationRetries(nextRetryCount);
         setRecommendations({
           status: "error",
           items: [],
-          error: error.message || "Recommendation generation failed."
+          error: `${error.message || "Recommendation generation failed."} (Attempt ${nextRetryCount}/3)`
         });
       }
     } finally {
+      controller.abort();
+
+      // 🔓 unlock AFTER everything is done
       manualLlmInFlightRef.current = false;
     }
   }
@@ -1047,24 +1111,24 @@ function AppShell({ config, onSettings }) {
         </>
       )}
       <footer
-  style={{
-    marginTop: "40px",
-    padding: "16px",
-    textAlign: "center",
-    fontSize: "12px",
-    opacity: 0.6
-  }}
->
-  Made with ❤️ by Siddhartha Bhattacharjee •{" "}
-  <a
-    href="/LICENSE"
-    target="_blank"
-    rel="noopener noreferrer"
-    style={{ color: "inherit", textDecoration: "underline" }}
-  >
-    © MIT License
-  </a>
-</footer>
+        style={{
+          marginTop: "40px",
+          padding: "16px",
+          textAlign: "center",
+          fontSize: "12px",
+          opacity: 0.6
+        }}
+      >
+        Made with ❤️ by Siddhartha Bhattacharjee •{" "}
+        <a
+          href="/LICENSE"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ color: "inherit", textDecoration: "underline" }}
+        >
+          © MIT License
+        </a>
+      </footer>
     </main>
   );
 }
@@ -1192,42 +1256,42 @@ function StatusTile({ data }) {
             </ul>
           </div>
           <div
-  className="tileFooter"
-  style={{
-    marginTop: "12px",
-    paddingTop: "10px",
-    borderTop: "1px solid rgba(255,255,255,0.08)",
-    display: "flex",
-    flexDirection: "column",
-    gap: "8px"
-  }}
->
-  {[
-    { label: "Finished", value: completionPct, color: "#22c55e" },
-    { label: "Dropped", value: dropPct, color: "#ef4444" },
-    { label: "On Hold", value: holdPct, color: "#f59e0b" }
-  ].map((item) => (
-    <div
-      key={item.label}
-      style={{
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        fontSize: "13px"
-      }}
-    >
-      <span style={{ opacity: 0.7 }}>{item.label}</span>
-      <span
-        style={{
-          fontWeight: "600",
-          color: item.color
-        }}
-      >
-        {item.value}%
-      </span>
-    </div>
-  ))}
-</div>
+            className="tileFooter"
+            style={{
+              marginTop: "12px",
+              paddingTop: "10px",
+              borderTop: "1px solid rgba(255,255,255,0.08)",
+              display: "flex",
+              flexDirection: "column",
+              gap: "8px"
+            }}
+          >
+            {[
+              { label: "Finished", value: completionPct, color: "#22c55e" },
+              { label: "Dropped", value: dropPct, color: "#ef4444" },
+              { label: "On Hold", value: holdPct, color: "#f59e0b" }
+            ].map((item) => (
+              <div
+                key={item.label}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  fontSize: "13px"
+                }}
+              >
+                <span style={{ opacity: 0.7 }}>{item.label}</span>
+                <span
+                  style={{
+                    fontWeight: "600",
+                    color: item.color
+                  }}
+                >
+                  {item.value}%
+                </span>
+              </div>
+            ))}
+          </div>
         </>
       ) : (
         <p className="mutedText">No data yet.</p>

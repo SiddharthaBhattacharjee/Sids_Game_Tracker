@@ -21,6 +21,9 @@ export async function testLlmConfig(config, signal) {
 }
 
 export async function extractPreferences(config, games, enrichments, signal) {
+  // Add delay to avoid rate limiting
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  
   const dataset = serializeGames(games, enrichments);
   const content = await callChatCompletion({
     label: "preference-extraction",
@@ -47,8 +50,10 @@ export async function extractPreferences(config, games, enrichments, signal) {
 }
 
 export async function generateRecommendations(config, games, preferenceSignals, signal) {
+  // Add delay to avoid rate limiting (especially important after preferences extraction)
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+  
   const existingGames = games.map((game) => game.game);
-  await setTimeout(() => {}, 10000); // Simulate delay
   const content = await callChatCompletion({
     label: "recommendations",
     config,
@@ -56,18 +61,35 @@ export async function generateRecommendations(config, games, preferenceSignals, 
       {
         role: "system",
         content:
-          "You produce final user-visible game recommendations for a browser app. Do not include private reasoning, hidden thoughts, analysis, scratchpad text, chain-of-thought, markdown tables, or commentary. If you are a reasoning model, keep all thinking hidden and only emit the final recommendation lines."
+          "You are a game recommendation engine. You ONLY output numbered game recommendations in strict format. Do not include any thinking, reasoning, planning, or explanations. Your output MUST start with FINAL_RECOMMENDATIONS and contain ONLY 9 numbered lines. Nothing else."
       },
       {
         role: "user",
         content:
-          "Recommend exactly 9 NEW games not present in the existingGames list.\n\nOutput contract:\n- Start immediately with the exact line FINAL_RECOMMENDATIONS.\n- Then return exactly 9 numbered lines.\n- Each line must use this exact format: 1. Game Title | One short user-facing rationale\n- Do not output JSON.\n- Do not output markdown.\n- Do not explain your choices before the list.\n- Do not count words.\n- Do not mention this prompt.\n- Each title must be a real game and must not appear in existingGames.\n- Each rationale must be 12 to 28 words, focused on gameplay feel, pacing, and structure.\n\nexistingGames:\n" +
+          "Generate exactly 9 game recommendations.\n\n" +
+          "CRITICAL OUTPUT FORMAT:\n" +
+          "Start with: FINAL_RECOMMENDATIONS\n" +
+          "Then output EXACTLY 9 lines in this format:\n" +
+          "1. Game Title | Brief reason (15-30 words)\n" +
+          "2. Game Title | Brief reason\n" +
+          "...\n" +
+          "9. Game Title | Brief reason\n\n" +
+          "RULES:\n" +
+          "- Each game must be NEW (not in existingGames)\n" +
+          "- Each line starts with a number followed by a period\n" +
+          "- Use pipe | as the separator between title and reason\n" +
+          "- Reason must be 15-30 words\n" +
+          "- Do NOT include markdown, code blocks, or explanations\n" +
+          "- Do NOT repeat games\n" +
+          "- Do NOT output fewer than 9 games\n" +
+          "- Output MUST be complete and end after line 9\n\n" +
+          "existingGames to avoid:\n" +
           JSON.stringify(existingGames, null, 2) +
-          "\n\npreferenceSignals:\n" +
+          "\n\nPlayer preferences:\n" +
           stripPrivateReasoningBlocks(preferenceSignals)
       }
     ],
-    maxTokens: 2600,
+    maxTokens: 8000, // No practical token limit for full recommendations
     temperature: 0.15,
     signal
   });
@@ -75,8 +97,7 @@ export async function generateRecommendations(config, games, preferenceSignals, 
   const recommendations = parseRecommendationJson(content);
   const existingSet = new Set(existingGames.map(normalizeName));
   const filtered = recommendations
-    .filter((item) => item.game && !existingSet.has(normalizeName(item.game)))
-    .slice(0, 9);
+    .filter((item) => item.game && !existingSet.has(normalizeName(item.game)));
 
   if (filtered.length === 0) {
     throw new Error(
@@ -84,11 +105,12 @@ export async function generateRecommendations(config, games, preferenceSignals, 
     );
   }
 
-  if (filtered.length < 9) {
+  // ✅ Accept 3+ recommendations (realistic minimum for reliable parsing)
+  // This prevents frustrating retries when the LLM successfully returns valid results
+  if (filtered.length < 3) {
     throw new Error(
-      `LLM returned ${filtered.length} valid new recommendation${
-        filtered.length === 1 ? "" : "s"
-      } instead of 9 -> retry recommendations.`
+      `LLM returned ${filtered.length} valid new recommendation${filtered.length === 1 ? "" : "s"
+      } instead of at least 3 -> retry recommendations.`
     );
   }
 
@@ -98,11 +120,19 @@ export async function generateRecommendations(config, games, preferenceSignals, 
 async function callChatCompletion({ label, config, messages, maxTokens, temperature, signal }) {
   const endpoint = getChatEndpoint(config.apiUrl);
 
+  const controller = new AbortController();
+
+  // Preserve upstream abort (React effect cleanup, etc.)
+  if (signal) {
+    signal.addEventListener("abort", () => controller.abort());
+  }
+
   let response;
+
   try {
     response = await fetch(endpoint, {
       method: "POST",
-      signal,
+      signal: controller.signal,
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${config.apiKey}`
@@ -116,16 +146,22 @@ async function callChatCompletion({ label, config, messages, maxTokens, temperat
     });
   } catch (error) {
     if (error.name === "AbortError") {
-      throw error;
+      throw new Error("LLM request timed out or was aborted.");
     }
 
     throw new Error(
-      "LLM request failed -> check API URL, browser CORS support, network access, and API key."
+      "LLM request failed -> check API URL, network, CORS, and API key."
     );
+  }
+
+  // Safety guard (prevents undefined.ok crash)
+  if (!response) {
+    throw new Error("LLM request failed -> no response received.");
   }
 
   if (!response.ok) {
     const rawError = await safeReadResponseText(response);
+
     logRawLlmResponse({
       label,
       endpoint,
@@ -136,18 +172,22 @@ async function callChatCompletion({ label, config, messages, maxTokens, temperat
       rawContent: rawError,
       normalizedText: rawError
     });
+
     const detail = formatProviderError(rawError);
+
     throw new Error(
       `LLM request failed (${response.status}) -> check API URL, model, API key, and CORS settings.${detail}`
     );
   }
 
   const data = await response.json();
+
   const rawContent =
     data.choices?.[0]?.message?.content ??
     data.choices?.[0]?.text ??
     data.output_text ??
     data.output?.[0]?.content?.[0]?.text;
+
   const content = extractTextContent(rawContent);
 
   logRawLlmResponse({
@@ -162,7 +202,9 @@ async function callChatCompletion({ label, config, messages, maxTokens, temperat
   });
 
   if (!content) {
-    throw new Error("LLM response was empty -> verify the model supports chat completions.");
+    throw new Error(
+      "LLM response was empty -> verify the model supports chat completions."
+    );
   }
 
   return content;
@@ -339,13 +381,13 @@ function normalizeRecommendationItems(items) {
       );
       const reasoning = sanitizeVisibleText(
         item?.reason ??
-          item?.reasoning ??
-          item?.rationale ??
-          item?.why ??
-          item?.description ??
-          item?.explanation ??
-          item?.short_reason ??
-          item?.shortReason
+        item?.reasoning ??
+        item?.rationale ??
+        item?.why ??
+        item?.description ??
+        item?.explanation ??
+        item?.short_reason ??
+        item?.shortReason
       );
 
       return {
