@@ -49,6 +49,14 @@ export async function extractPreferences(config, games, enrichments, signal) {
   return formatPreferenceOutput(content);
 }
 
+export function sanitizePreferenceOutput(content) {
+  try {
+    return formatPreferenceOutput(content);
+  } catch {
+    return "";
+  }
+}
+
 export async function extendPreferences(config, games, enrichments, existingPreferences, signal) {
   // Add delay to avoid rate limiting
   await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -360,19 +368,18 @@ function formatPreferenceOutput(content) {
     return parsed.map((item) => `- ${item}`).join("\n");
   }
 
-  const cleanedLines = withoutReasoning
-    .replace(/```(?:text|markdown|md)?/gi, "")
-    .replace(/```/g, "")
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .filter((line) => !isPrivateReasoningLine(line));
+  const cleanedLines = splitVisibleLines(withoutReasoning);
 
   const bulletLines = cleanedLines.filter((line) => /^\s*(?:[-*]|\d+[.)])\s+/.test(line));
-  const finalLines = bulletLines.length >= 2 ? bulletLines : cleanedLines;
+  const finalLines = bulletLines
+    .map(normalizePreferenceLine)
+    .filter(isVisiblePreferencePoint);
+
+  if (finalLines.length === 0) {
+    throw new Error("LLM preference output did not contain visible preference points.");
+  }
 
   return finalLines
-    .map((line) => line.replace(/^\s*(?:[-*]|\d+[.)])\s+/, "- "))
     .join("\n")
     .trim();
 }
@@ -393,6 +400,7 @@ function mergePreferenceContinuation(existingPreferences, continuation) {
   let handledFirstIncomingLine = false;
 
   incomingLines.forEach((rawLine) => {
+    const isListLine = /^\s*(?:[-*]|\d+[.)])\s+/.test(rawLine);
     const line = normalizePreferenceLine(rawLine);
 
     if (!line) {
@@ -409,6 +417,10 @@ function mergePreferenceContinuation(existingPreferences, continuation) {
     }
 
     handledFirstIncomingLine = true;
+
+    if (!isListLine) {
+      return;
+    }
 
     if (hasEquivalentPreferenceLine(result, line)) {
       return;
@@ -428,13 +440,18 @@ function splitPreferenceLines(value) {
     return parsed.map((item) => `- ${item}`);
   }
 
-  return withoutReasoning
+  return splitVisibleLines(withoutReasoning);
+}
+
+function splitVisibleLines(value) {
+  return String(value ?? "")
     .replace(/```(?:text|markdown|md)?/gi, "")
     .replace(/```/g, "")
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean)
-    .filter((line) => !isPrivateReasoningLine(line));
+    .filter((line) => !isPrivateReasoningLine(line))
+    .filter((line) => !isPrivateReasoningText(stripListPrefix(line)));
 }
 
 function normalizePreferenceLine(line) {
@@ -442,6 +459,12 @@ function normalizePreferenceLine(line) {
     .trim()
     .replace(/^\s*(?:[-*]|\d+[.)])\s+/, "- ")
     .trim();
+}
+
+function isVisiblePreferencePoint(line) {
+  const body = stripListPrefix(line);
+
+  return Boolean(body) && !isPrivateReasoningText(body);
 }
 
 function shouldMergePreferenceLine(existingLine, incomingLine) {
@@ -552,7 +575,7 @@ function preferenceValuesFromParsed(parsed) {
 }
 
 function parseRecommendationJson(content) {
-  const cleaned = stripPrivateReasoningBlocks(content);
+  const cleaned = stripReasoningSections(stripPrivateReasoningBlocks(content));
   const segments = [...new Set([getFinalRecommendationSegment(cleaned), cleaned].filter(Boolean))];
   const found = [];
 
@@ -567,7 +590,6 @@ function parseRecommendationJson(content) {
     }
 
     found.push(...parseLooseRecommendations(segment));
-    found.push(...parsePlanningCandidateTitles(segment));
   }
 
   const normalized = normalizeRecommendationItems(found);
@@ -1101,9 +1123,22 @@ function stripReasoningSections(value) {
 }
 
 function isPrivateReasoningLine(line) {
-  return /^\s*(?:reasoning|analysis|thinking|thought process|chain[- ]of[- ]thought|scratchpad|internal notes?)\s*:/i.test(
-    line
-  );
+  return isPrivateReasoningText(stripListPrefix(line));
+}
+
+function stripListPrefix(line) {
+  return String(line ?? "")
+    .replace(/^\s*(?:[-*]|\d+[.)])\s+/, "")
+    .trim();
+}
+
+function isPrivateReasoningText(value) {
+  const text = String(value ?? "").trim();
+
+  return /^(?:reasoning|analysis|thinking|thought process|chain[- ]of[- ]thought|scratchpad|internal notes?|hidden thoughts?|private reasoning|model reasoning)\s*:/i.test(text) ||
+    /^(?:i|we)\s+(?:need|should|can|will|would|want)\b/i.test(text) ||
+    /^(?:let'?s|let us)\s+\b/i.test(text) ||
+    /^okay[,\s]/i.test(text);
 }
 
 function getJsonCandidates(content) {

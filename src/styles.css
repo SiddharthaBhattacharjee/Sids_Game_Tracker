@@ -147,6 +147,7 @@ p {
   display: flex;
   justify-content: center;
   padding: 22px;
+  position: relative;
 }
 
 .framedTool {
@@ -725,6 +726,18 @@ h1 {
   color: var(--ink);
   line-height: 1.62;
   white-space: pre-wrap;
+}
+
+.pendingExtensionText {
+  border-left: 3px solid var(--teal);
+  padding-left: 12px;
+}
+
+.extensionActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
 }
 
 .llmText + .inlineError,

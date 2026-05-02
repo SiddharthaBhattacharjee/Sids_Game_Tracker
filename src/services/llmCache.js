@@ -1,4 +1,5 @@
 import { normalizeConfig } from "./config";
+import { sanitizePreferenceOutput } from "./llm";
 
 export const LLM_CACHE_STORAGE_KEY = "gameInsightsLlmCache";
 
@@ -71,7 +72,7 @@ export function saveCachedLlmData(hash, partialData) {
 }
 
 function normalizeCachedData(data) {
-  const preferencesText =
+  const rawPreferencesText =
     typeof data?.preferencesText === "string"
       ? data.preferencesText
       : typeof data?.preferences?.text === "string"
@@ -84,7 +85,7 @@ function normalizeCachedData(data) {
       : [];
 
   return {
-    preferencesText,
+    preferencesText: sanitizePreferenceOutput(rawPreferencesText),
     recommendationsItems: recommendationsItems
       .map((item) => ({
         game: String(item?.game ?? "").trim(),
