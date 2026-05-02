@@ -90,8 +90,18 @@ function normalizeCachedData(data) {
         game: String(item?.game ?? "").trim(),
         reasoning: String(item?.reasoning ?? item?.reason ?? "").trim()
       }))
-      .filter((item) => item.game)
+      .filter((item) => item.game && hasCompleteGeneratedText(item.reasoning))
   };
+}
+
+function hasCompleteGeneratedText(value) {
+  const text = String(value ?? "").trimEnd();
+
+  if (!text.trim()) {
+    return false;
+  }
+
+  return !/[A-Za-z]$/.test(text.at(-1) ?? "");
 }
 
 function stableStringify(value) {

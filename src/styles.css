@@ -727,6 +727,11 @@ h1 {
   white-space: pre-wrap;
 }
 
+.llmText + .inlineError,
+.extensionPanel {
+  margin-top: 14px;
+}
+
 .inlineError {
   align-items: center;
   border: 1px solid #f2beb5;

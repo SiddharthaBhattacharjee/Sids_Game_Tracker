@@ -37,16 +37,57 @@ export async function extractPreferences(config, games, enrichments, signal) {
       {
         role: "user",
         content:
-          "Return 5 to 8 concise bullet points about preferred gameplay feel, pacing, structure, challenge, genre patterns, and review themes.\n\nRules:\n- Start each bullet with \"- \".\n- Do not include a heading.\n- Do not include reasoning steps or internal analysis.\n- Do not recommend games.\n\nDataset:\n" +
+          "Return 5 to 8 complete bullet points about preferred gameplay feel, pacing, structure, challenge, genre patterns, and review themes.\n\nRules:\n- Start each bullet with \"- \".\n- Make each bullet a complete sentence of 18 to 35 words.\n- End every bullet with punctuation.\n- Do not include a heading.\n- Do not include reasoning steps or internal analysis.\n- Do not recommend games.\n\nDataset:\n" +
           JSON.stringify(dataset, null, 2)
       }
     ],
-    maxTokens: 700,
+    maxTokens: 2000,
     temperature: 0.2,
     signal
   });
 
   return formatPreferenceOutput(content);
+}
+
+export async function extendPreferences(config, games, enrichments, existingPreferences, signal) {
+  // Add delay to avoid rate limiting
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+
+  const dataset = serializeGames(games, enrichments);
+  const existingText = stripPrivateReasoningBlocks(existingPreferences).trim();
+  const content = await callChatCompletion({
+    label: "preference-extension",
+    config,
+    messages: [
+      {
+        role: "system",
+        content:
+          "You finish a partially generated player preference profile. Output only the missing continuation. Do not restart, summarize, or rewrite the already visible text."
+      },
+      {
+        role: "user",
+        content:
+          "Existing preference profile text:\n<<<\n" +
+          existingText +
+          "\n>>>\n\n" +
+          "Return only the text that should be appended after the existing text.\n\n" +
+          "Rules:\n" +
+          "- If the last visible bullet is incomplete, start by completing that bullet fragment without repeating the fragment.\n" +
+          "- If the visible bullets are complete but the profile is short, add only the missing new bullets.\n" +
+          "- Do not repeat any existing bullet.\n" +
+          "- New bullets must start with \"- \".\n" +
+          "- End every completed bullet with punctuation.\n" +
+          "- Do not recommend games.\n\n" +
+          "Dataset:\n" +
+          JSON.stringify(dataset, null, 2)
+      }
+    ],
+    maxTokens: 1600,
+    temperature: 0.2,
+    signal
+  });
+
+  return mergePreferenceContinuation(existingText, content);
 }
 
 export async function generateRecommendations(config, games, preferenceSignals, signal) {
@@ -79,6 +120,7 @@ export async function generateRecommendations(config, games, preferenceSignals, 
           "- Each line starts with a number followed by a period\n" +
           "- Use pipe | as the separator between title and reason\n" +
           "- Reason must be 15-30 words\n" +
+          "- Reason must end with punctuation\n" +
           "- Do NOT include markdown, code blocks, or explanations\n" +
           "- Do NOT repeat games\n" +
           "- Do NOT output fewer than 9 games\n" +
@@ -117,6 +159,75 @@ export async function generateRecommendations(config, games, preferenceSignals, 
   return filtered;
 }
 
+export async function generateMoreRecommendations(
+  config,
+  games,
+  preferenceSignals,
+  existingRecommendations,
+  signal
+) {
+  // Add delay to avoid rate limiting
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+
+  const existingGames = games.map((game) => game.game);
+  const alreadyRecommended = (existingRecommendations ?? []).map((item) => item.game);
+  const content = await callChatCompletion({
+    label: "recommendation-extension",
+    config,
+    messages: [
+      {
+        role: "system",
+        content:
+          "You are a game recommendation engine. You ONLY output numbered game recommendations in strict format. Do not include thinking, planning, or explanations outside the numbered recommendations."
+      },
+      {
+        role: "user",
+        content:
+          "Generate exactly 6 additional game recommendations.\n\n" +
+          "CRITICAL OUTPUT FORMAT:\n" +
+          "Start with: FINAL_RECOMMENDATIONS\n" +
+          "Then output EXACTLY 6 lines in this format:\n" +
+          "1. Game Title | Brief reason ending with punctuation\n" +
+          "2. Game Title | Brief reason ending with punctuation\n" +
+          "...\n" +
+          "6. Game Title | Brief reason ending with punctuation\n\n" +
+          "RULES:\n" +
+          "- Each game must be NEW (not in existingGames and not in alreadyRecommended)\n" +
+          "- Each line starts with a number followed by a period\n" +
+          "- Use pipe | as the separator between title and reason\n" +
+          "- Reason must be 15-30 words\n" +
+          "- Reason must end with punctuation\n" +
+          "- Do NOT include markdown, code blocks, or explanations\n" +
+          "- Do NOT repeat games\n" +
+          "- Output MUST be complete and end after line 6\n\n" +
+          "existingGames to avoid:\n" +
+          JSON.stringify(existingGames, null, 2) +
+          "\n\nalreadyRecommended to avoid:\n" +
+          JSON.stringify(alreadyRecommended, null, 2) +
+          "\n\nPlayer preferences:\n" +
+          stripPrivateReasoningBlocks(preferenceSignals)
+      }
+    ],
+    maxTokens: 5000,
+    temperature: 0.18,
+    signal
+  });
+
+  const recommendations = parseRecommendationJson(content);
+  const existingSet = new Set([...existingGames, ...alreadyRecommended].map(normalizeName));
+  const filtered = recommendations.filter(
+    (item) => item.game && !existingSet.has(normalizeName(item.game))
+  );
+
+  if (filtered.length === 0) {
+    throw new Error(
+      "LLM returned no complete new recommendations -> retry recommendations."
+    );
+  }
+
+  return filtered;
+}
+
 async function callChatCompletion({ label, config, messages, maxTokens, temperature, signal }) {
   const endpoint = getChatEndpoint(config.apiUrl);
 
@@ -146,7 +257,7 @@ async function callChatCompletion({ label, config, messages, maxTokens, temperat
     });
   } catch (error) {
     if (error.name === "AbortError") {
-      throw new Error("LLM request timed out or was aborted.");
+      throw new Error("LLM request was aborted before the provider responded.");
     }
 
     throw new Error(
@@ -266,6 +377,143 @@ function formatPreferenceOutput(content) {
     .trim();
 }
 
+function mergePreferenceContinuation(existingPreferences, continuation) {
+  const baseLines = splitPreferenceLines(existingPreferences);
+  const incomingLines = splitPreferenceLines(continuation);
+
+  if (baseLines.length === 0) {
+    return formatPreferenceOutput(continuation);
+  }
+
+  if (incomingLines.length === 0) {
+    return baseLines.join("\n").trim();
+  }
+
+  const result = [...baseLines];
+  let handledFirstIncomingLine = false;
+
+  incomingLines.forEach((rawLine) => {
+    const line = normalizePreferenceLine(rawLine);
+
+    if (!line) {
+      return;
+    }
+
+    const lastIndex = result.length - 1;
+    const lastLine = result[lastIndex] ?? "";
+
+    if (!handledFirstIncomingLine && shouldMergePreferenceLine(lastLine, line)) {
+      result[lastIndex] = mergePreferenceLine(lastLine, line);
+      handledFirstIncomingLine = true;
+      return;
+    }
+
+    handledFirstIncomingLine = true;
+
+    if (hasEquivalentPreferenceLine(result, line)) {
+      return;
+    }
+
+    result.push(line);
+  });
+
+  return result.join("\n").trim();
+}
+
+function splitPreferenceLines(value) {
+  const withoutReasoning = stripReasoningSections(stripPrivateReasoningBlocks(value));
+  const parsed = parsePreferenceJson(withoutReasoning);
+
+  if (parsed.length > 0) {
+    return parsed.map((item) => `- ${item}`);
+  }
+
+  return withoutReasoning
+    .replace(/```(?:text|markdown|md)?/gi, "")
+    .replace(/```/g, "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => !isPrivateReasoningLine(line));
+}
+
+function normalizePreferenceLine(line) {
+  return String(line ?? "")
+    .trim()
+    .replace(/^\s*(?:[-*]|\d+[.)])\s+/, "- ")
+    .trim();
+}
+
+function shouldMergePreferenceLine(existingLine, incomingLine) {
+  if (!existingLine || !incomingLine || !isIncompleteGeneratedText(existingLine)) {
+    return false;
+  }
+
+  if (!/^\s*(?:[-*]|\d+[.)])\s+/.test(incomingLine)) {
+    return true;
+  }
+
+  const existingBody = preferenceLineBody(existingLine);
+  const incomingBody = preferenceLineBody(incomingLine);
+
+  return (
+    incomingBody.startsWith(existingBody) ||
+    existingBody.startsWith(incomingBody) ||
+    haveSharedPrefix(existingBody, incomingBody, 24)
+  );
+}
+
+function mergePreferenceLine(existingLine, incomingLine) {
+  const normalizedIncoming = normalizePreferenceLine(incomingLine);
+  const existingBody = preferenceLineBody(existingLine);
+  const incomingBody = preferenceLineBody(normalizedIncoming);
+
+  if (incomingBody.startsWith(existingBody) && incomingBody.length > existingBody.length) {
+    return normalizedIncoming;
+  }
+
+  if (existingBody.startsWith(incomingBody)) {
+    return existingLine;
+  }
+
+  const separator = /\s$/.test(existingLine) || /^\s/.test(incomingLine) ? "" : " ";
+
+  return `${existingLine}${separator}${incomingLine.replace(/^\s*(?:[-*]|\d+[.)])\s+/, "")}`.trim();
+}
+
+function hasEquivalentPreferenceLine(existingLines, incomingLine) {
+  const incomingBody = preferenceLineBody(incomingLine);
+
+  return existingLines.some((line) => {
+    const existingBody = preferenceLineBody(line);
+
+    return (
+      existingBody === incomingBody ||
+      (existingBody.length > 24 && incomingBody.startsWith(existingBody)) ||
+      (incomingBody.length > 24 && existingBody.startsWith(incomingBody))
+    );
+  });
+}
+
+function preferenceLineBody(line) {
+  return String(line ?? "")
+    .replace(/^\s*(?:[-*]|\d+[.)])\s+/, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function haveSharedPrefix(left, right, minimumLength) {
+  let index = 0;
+  const max = Math.min(left.length, right.length);
+
+  while (index < max && left[index] === right[index]) {
+    index += 1;
+  }
+
+  return index >= minimumLength;
+}
+
 function parsePreferenceJson(content) {
   for (const candidate of getJsonCandidates(content)) {
     const parsed = tryParseJson(candidate);
@@ -369,17 +617,19 @@ function normalizeRecommendationItems(items) {
 
   return items
     .map((item) => {
+      const rawText = getRecommendationRawText(item);
       if (typeof item === "string") {
         return {
           game: sanitizeGameName(item),
-          reasoning: defaultRecommendationReason()
+          reasoning: defaultRecommendationReason(),
+          complete: isCompleteGeneratedText(rawText || item)
         };
       }
 
       const game = sanitizeGameName(
         item?.game ?? item?.name ?? item?.title ?? item?.gameName ?? item?.game_title
       );
-      const reasoning = sanitizeVisibleText(
+      const sourceReason = sanitizeVisibleText(
         item?.reason ??
         item?.reasoning ??
         item?.rationale ??
@@ -389,16 +639,18 @@ function normalizeRecommendationItems(items) {
         item?.short_reason ??
         item?.shortReason
       );
+      const completionText = sourceReason || rawText || game;
 
       return {
         game,
         reasoning:
-          reasoning ||
-          defaultRecommendationReason()
+          sourceReason ||
+          defaultRecommendationReason(),
+        complete: isCompleteGeneratedText(completionText)
       };
     })
     .filter((item) => {
-      if (!item.game) {
+      if (!item.game || !item.complete) {
         return false;
       }
 
@@ -409,11 +661,37 @@ function normalizeRecommendationItems(items) {
 
       seen.add(key);
       return true;
-    });
+    })
+    .map(({ game, reasoning }) => ({ game, reasoning }));
 }
 
 function defaultRecommendationReason() {
   return "Matches the pacing, structure, discovery, and play-feel patterns reflected across your game log.";
+}
+
+function getRecommendationRawText(item) {
+  if (typeof item === "string") {
+    return item;
+  }
+
+  return String(item?._rawText ?? item?.rawText ?? "").trim();
+}
+
+function isCompleteGeneratedText(value) {
+  const text = String(value ?? "").trimEnd();
+
+  if (!text.trim()) {
+    return false;
+  }
+
+  return !isIncompleteGeneratedText(text);
+}
+
+function isIncompleteGeneratedText(value) {
+  const text = String(value ?? "").trimEnd();
+  const lastChar = text.at(-1) ?? "";
+
+  return /[A-Za-z]$/.test(lastChar);
 }
 
 function parseLooseRecommendations(content) {
@@ -476,7 +754,7 @@ function parseLooseObject(text) {
     return null;
   }
 
-  return { game, reason };
+  return { game, reason, _rawText: text };
 }
 
 function getFinalRecommendationSegment(text) {
@@ -532,12 +810,13 @@ function parseGameReasonBlocks(text) {
       if (current?.game) {
         items.push(current);
       }
-      current = { game: gameMatch[1], reason: "" };
+      current = { game: gameMatch[1], reason: "", _rawText: line };
       return;
     }
 
     if (reasonMatch && current) {
       current.reason = reasonMatch[1];
+      current._rawText = `${current._rawText}\n${line}`;
     }
   });
 
@@ -563,7 +842,7 @@ function parsePlanningCandidateTitles(text) {
 
     const titles = extractTitleList(candidateMatch[1]);
     titles.forEach((title) => {
-      items.push({ game: title, reason: defaultRecommendationReason() });
+      items.push({ game: title, reason: "", _rawText: title });
     });
   });
 
@@ -619,7 +898,8 @@ function parseMarkdownTableRecommendations(text) {
     .filter((cells) => !cells.every((cell) => /^:?-{3,}:?$/.test(cell)))
     .map((cells) => ({
       game: cells[gameIndex] || "",
-      reason: reasonIndex >= 0 ? cells[reasonIndex] || "" : ""
+      reason: reasonIndex >= 0 ? cells[reasonIndex] || "" : "",
+      _rawText: cells.join(" | ")
     }))
     .filter((item) => item.game);
 }
@@ -638,7 +918,7 @@ function parseYamlRecommendationBlocks(text) {
       if (current?.game) {
         items.push(current);
       }
-      current = { game: startMatch[1], reason: "" };
+      current = { game: startMatch[1], reason: "", _rawText: line };
       return;
     }
 
@@ -646,12 +926,13 @@ function parseYamlRecommendationBlocks(text) {
       if (current?.game) {
         items.push(current);
       }
-      current = { game: gameMatch[1], reason: "" };
+      current = { game: gameMatch[1], reason: "", _rawText: line };
       return;
     }
 
     if (reasonMatch && current) {
       current.reason = reasonMatch[1];
+      current._rawText = `${current._rawText}\n${line}`;
     }
   });
 
@@ -671,7 +952,8 @@ function parseLooseLine(line) {
   if (fieldMatch) {
     return {
       game: fieldMatch[1],
-      reason: fieldMatch[2] || ""
+      reason: fieldMatch[2] || "",
+      _rawText: withoutMarkdown
     };
   }
 
@@ -693,12 +975,13 @@ function parseLooseLine(line) {
     if (index > 0) {
       return {
         game: withoutMarkdown.slice(0, index),
-        reason: withoutMarkdown.slice(index + separator.length)
+        reason: withoutMarkdown.slice(index + separator.length),
+        _rawText: withoutMarkdown
       };
     }
   }
 
-  return { game: withoutMarkdown, reason: "" };
+  return { game: withoutMarkdown, reason: "", _rawText: withoutMarkdown };
 }
 
 async function safeReadResponseText(response) {

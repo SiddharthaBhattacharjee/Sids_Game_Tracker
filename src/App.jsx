@@ -9,6 +9,7 @@ import {
   KeyRound,
   Loader2,
   Moon,
+  Plus,
   RefreshCw,
   Save,
   Settings,
@@ -29,7 +30,13 @@ import {
   saveConfig,
   validateConfigShape
 } from "./services/config";
-import { extractPreferences, generateRecommendations, testLlmConfig } from "./services/llm";
+import {
+  extractPreferences,
+  extendPreferences,
+  generateMoreRecommendations,
+  generateRecommendations,
+  testLlmConfig
+} from "./services/llm";
 import { buildLlmCacheHash, loadCachedLlmData, saveCachedLlmData } from "./services/llmCache";
 import { fetchRawgGame, testRawgKey } from "./services/rawg";
 import { fetchSheetGames } from "./services/sheet";
@@ -498,6 +505,9 @@ function AppShell({ config, onSettings }) {
   });
   const [preferenceRetries, setPreferenceRetries] = useState(0);
   const [recommendationRetries, setRecommendationRetries] = useState(0);
+  const [preferenceExtension, setPreferenceExtension] = useState({ status: "idle", error: "" });
+  const [recommendationExtension, setRecommendationExtension] = useState({ status: "idle", error: "" });
+  const [autoRecommendationPaused, setAutoRecommendationPaused] = useState(false);
   const manualLlmInFlightRef = useRef(false);
 
   useEffect(() => {
@@ -517,6 +527,9 @@ function AppShell({ config, onSettings }) {
     setLlmCacheState({ status: "idle", hash: "", data: null });
     setPreferenceRetries(0);
     setRecommendationRetries(0);
+    setPreferenceExtension({ status: "idle", error: "" });
+    setRecommendationExtension({ status: "idle", error: "" });
+    setAutoRecommendationPaused(false);
 
     fetchSheetGames(config.sheetUrl, controller.signal)
       .then((games) => {
@@ -748,6 +761,10 @@ function AppShell({ config, onSettings }) {
       return;
     }
 
+    if (autoRecommendationPaused) {
+      return;
+    }
+
     // Don't auto-retry if already in error state (user must click Regenerate)
     if (
       preferences.status !== "ready" ||
@@ -766,7 +783,6 @@ function AppShell({ config, onSettings }) {
     }
 
     const controller = new AbortController();
-    let finished = false;
 
     setRecommendations({ status: "loading", items: [], error: "" });
     setRecommendationEnrichments({});
@@ -778,8 +794,8 @@ function AppShell({ config, onSettings }) {
       controller.signal
     )
       .then((items) => {
-        finished = true;
         setRecommendations({ status: "ready", items, error: "" });
+        setAutoRecommendationPaused(false);
 
         saveCachedLlmData(llmCacheState.hash, {
           preferencesText: preferences.text,
@@ -787,8 +803,6 @@ function AppShell({ config, onSettings }) {
         });
       })
       .catch((error) => {
-        finished = true;
-
         if (error.name === "AbortError") {
           return;
         }
@@ -800,19 +814,9 @@ function AppShell({ config, onSettings }) {
         });
       });
 
-    // ℹ️ After 60s, enable manual retry button while keeping request alive
-    const timeout = setTimeout(() => {
-      if (!finished) {
-        // Request is still pending - we just log this, don't interrupt
-        console.log("[Game Insights] LLM request still pending after 60s - user can retry manually");
-      }
-    }, 60000);
-
-    return () => {
-      controller.abort();
-      clearTimeout(timeout);
-    };
+    return () => controller.abort();
   }, [
+    autoRecommendationPaused,
     config,
     llmCacheState.data,
     llmCacheState.hash,
@@ -902,15 +906,15 @@ function AppShell({ config, onSettings }) {
     }
 
     manualLlmInFlightRef.current = true;
+    setAutoRecommendationPaused(true);
+    setPreferenceExtension({ status: "idle", error: "" });
+    setRecommendationExtension({ status: "idle", error: "" });
     setPreferences({ status: "loading", text: "", error: "" });
-    setRecommendations(waitingRecommendations);
-    setRecommendationEnrichments({});
 
     const controller = new AbortController();
-    let nextPreferences = "";
 
     try {
-      nextPreferences = await extractPreferences(
+      const nextPreferences = await extractPreferences(
         config,
         sheetState.games,
         enrichments,
@@ -918,10 +922,7 @@ function AppShell({ config, onSettings }) {
       );
       setPreferences({ status: "ready", text: nextPreferences, error: "" });
       setPreferenceRetries(0); // Reset on success
-      saveCachedLlmData(llmCacheState.hash, {
-        preferencesText: nextPreferences,
-        recommendationsItems: []
-      });
+      saveAndHydrateLlmCache({ preferencesText: nextPreferences });
     } catch (error) {
       if (error.name !== "AbortError") {
         const nextRetryCount = preferenceRetries + 1;
@@ -930,35 +931,6 @@ function AppShell({ config, onSettings }) {
           status: "error",
           text: "",
           error: `${error.message || "Preference extraction failed."} (Attempt ${nextRetryCount}/3)`
-        });
-      }
-      manualLlmInFlightRef.current = false;
-      return;
-    }
-
-    setRecommendations({ status: "loading", items: [], error: "" });
-
-    try {
-      const items = await generateRecommendations(
-        config,
-        sheetState.games,
-        nextPreferences,
-        controller.signal
-      );
-      setRecommendations({ status: "ready", items, error: "" });
-      setRecommendationRetries(0); // Reset on success
-      saveAndHydrateLlmCache({
-        preferencesText: nextPreferences,
-        recommendationsItems: items
-      });
-    } catch (error) {
-      if (error.name !== "AbortError") {
-        const nextRetryCount = recommendationRetries + 1;
-        setRecommendationRetries(nextRetryCount);
-        setRecommendations({
-          status: "error",
-          items: [],
-          error: `${error.message || "Recommendation generation failed."} (Attempt ${nextRetryCount}/3)`
         });
       }
     } finally {
@@ -980,34 +952,22 @@ function AppShell({ config, onSettings }) {
       return;
     }
 
-    // 🔒 lock auto effect
     manualLlmInFlightRef.current = true;
+    setRecommendationExtension({ status: "idle", error: "" });
+    setAutoRecommendationPaused(false);
 
     const controller = new AbortController();
-    let finished = false;
-    let retryEnabledAfter60s = false;
 
     setRecommendations({ status: "loading", items: [], error: "" });
     setRecommendationEnrichments({});
 
-    // ℹ️ After 60s, allow manual retry while keeping request alive
-    const timeout = setTimeout(() => {
-      if (!finished) {
-        retryEnabledAfter60s = true;
-        console.log("[Game Insights] LLM request still pending after 60s - user can click Regenerate to retry");
-      }
-    }, 60000);
-
     try {
-      // Let the API call complete without timeout interruption
       const items = await generateRecommendations(
         config,
         sheetState.games,
         preferences.text,
         controller.signal
       );
-
-      finished = true;
 
       setRecommendations({ status: "ready", items, error: "" });
       setRecommendationRetries(0); // Reset on success
@@ -1017,8 +977,6 @@ function AppShell({ config, onSettings }) {
         recommendationsItems: items
       });
     } catch (error) {
-      finished = true;
-
       if (error.name !== "AbortError") {
         const nextRetryCount = recommendationRetries + 1;
         setRecommendationRetries(nextRetryCount);
@@ -1029,12 +987,99 @@ function AppShell({ config, onSettings }) {
         });
       }
     } finally {
-      clearTimeout(timeout);
-      controller.abort();
-
-      // 🔓 unlock AFTER everything is done
       manualLlmInFlightRef.current = false;
     }
+  }
+
+  async function extendPreferenceProfile() {
+    if (!canExtendPreferences()) {
+      return;
+    }
+
+    manualLlmInFlightRef.current = true;
+    setAutoRecommendationPaused(true);
+    setPreferenceExtension({ status: "loading", error: "" });
+
+    const controller = new AbortController();
+
+    try {
+      const extendedText = await extendPreferences(
+        config,
+        sheetState.games,
+        enrichments,
+        preferences.text,
+        controller.signal
+      );
+
+      setPreferences({ status: "ready", text: extendedText, error: "" });
+      setPreferenceExtension({ status: "idle", error: "" });
+      saveAndHydrateLlmCache({ preferencesText: extendedText });
+    } catch (error) {
+      if (error.name !== "AbortError") {
+        setPreferenceExtension({
+          status: "error",
+          error: error.message || "Preference extension failed."
+        });
+      }
+    } finally {
+      manualLlmInFlightRef.current = false;
+    }
+  }
+
+  async function extendRecommendationsList() {
+    if (!canExtendRecommendations()) {
+      return;
+    }
+
+    manualLlmInFlightRef.current = true;
+    setAutoRecommendationPaused(false);
+    setRecommendationExtension({ status: "loading", error: "" });
+
+    const controller = new AbortController();
+
+    try {
+      const nextItems = await generateMoreRecommendations(
+        config,
+        sheetState.games,
+        preferences.text,
+        recommendations.items,
+        controller.signal
+      );
+      const mergedItems = mergeRecommendationItems(recommendations.items, nextItems);
+
+      setRecommendations({ status: "ready", items: mergedItems, error: "" });
+      setRecommendationExtension({ status: "idle", error: "" });
+      setRecommendationRetries(0);
+
+      saveAndHydrateLlmCache({
+        preferencesText: preferences.text,
+        recommendationsItems: mergedItems
+      });
+    } catch (error) {
+      if (error.name !== "AbortError") {
+        setRecommendationExtension({
+          status: "error",
+          error: error.message || "Recommendation extension failed."
+        });
+      }
+    } finally {
+      manualLlmInFlightRef.current = false;
+    }
+  }
+
+  function mergeRecommendationItems(currentItems, nextItems) {
+    const seen = new Set();
+
+    return [...currentItems, ...nextItems].filter((item) => {
+      const key = String(item?.game ?? "").trim().toLowerCase();
+
+      if (!key || seen.has(key)) {
+        return false;
+      }
+
+      seen.add(key);
+      return true;
+    });
   }
 
   function canRegeneratePreferences() {
@@ -1042,7 +1087,9 @@ function AppShell({ config, onSettings }) {
       sheetState.status === "ready" &&
       llmCacheState.status === "ready" &&
       preferences.status !== "loading" &&
+      preferenceExtension.status !== "loading" &&
       recommendations.status !== "loading" &&
+      recommendationExtension.status !== "loading" &&
       (!config.rawgApiKey || ["ready", "warning", "disabled"].includes(rawgState.status))
     );
   }
@@ -1052,7 +1099,32 @@ function AppShell({ config, onSettings }) {
       sheetState.status === "ready" &&
       llmCacheState.status === "ready" &&
       preferences.status === "ready" &&
-      recommendations.status !== "loading"
+      preferenceExtension.status !== "loading" &&
+      recommendations.status !== "loading" &&
+      recommendationExtension.status !== "loading"
+    );
+  }
+
+  function canExtendPreferences() {
+    return (
+      sheetState.status === "ready" &&
+      llmCacheState.status === "ready" &&
+      preferences.status === "ready" &&
+      preferenceExtension.status !== "loading" &&
+      recommendations.status !== "loading" &&
+      recommendationExtension.status !== "loading" &&
+      (!config.rawgApiKey || ["ready", "warning", "disabled"].includes(rawgState.status))
+    );
+  }
+
+  function canExtendRecommendations() {
+    return (
+      sheetState.status === "ready" &&
+      llmCacheState.status === "ready" &&
+      preferences.status === "ready" &&
+      preferenceExtension.status !== "loading" &&
+      recommendations.status === "ready" &&
+      recommendationExtension.status !== "loading"
     );
   }
 
@@ -1109,14 +1181,21 @@ function AppShell({ config, onSettings }) {
             waiting={!llmCanStart}
             onRegenerate={regeneratePreferences}
             canRegenerate={canRegeneratePreferences()}
+            onExtend={extendPreferenceProfile}
+            canExtend={canExtendPreferences()}
+            extensionState={preferenceExtension}
           />
           <RecommendationSection
             state={recommendations}
             enrichments={recommendationEnrichments}
             rawgActive={Boolean(config.rawgApiKey) && ["ready", "warning"].includes(rawgState.status)}
             blocked={preferences.status !== "ready"}
+            autoPaused={autoRecommendationPaused}
             onRegenerate={regenerateRecommendations}
             canRegenerate={canRegenerateRecommendations()}
+            onExtend={extendRecommendationsList}
+            canExtend={canExtendRecommendations()}
+            extensionState={recommendationExtension}
           />
         </>
       )}
@@ -1610,7 +1689,15 @@ function StarRating({ rating }) {
   );
 }
 
-function PreferenceSection({ state, waiting, onRegenerate, canRegenerate }) {
+function PreferenceSection({
+  state,
+  waiting,
+  onRegenerate,
+  canRegenerate,
+  onExtend,
+  canExtend,
+  extensionState
+}) {
   return (
     <section className="contentSection">
       <SectionHeader
@@ -1618,16 +1705,29 @@ function PreferenceSection({ state, waiting, onRegenerate, canRegenerate }) {
         title="Derived Player Preferences"
         badge="AI"
         action={
-          <RegenerateButton
-            loading={state.status === "loading"}
-            disabled={!canRegenerate}
-            onClick={onRegenerate}
-          />
+          <>
+            <RegenerateButton
+              loading={state.status === "loading"}
+              disabled={!canRegenerate}
+              onClick={onRegenerate}
+            />
+            <ExtendButton
+              loading={extensionState.status === "loading"}
+              disabled={!canExtend}
+              onClick={onExtend}
+              title="Ask the LLM to continue the current preference text"
+            />
+          </>
         }
       />
       <article className="llmPanel">
         {state.status === "ready" ? (
-          <div className="llmText">{state.text}</div>
+          <>
+            <div className="llmText">{state.text}</div>
+            {extensionState.status === "error" ? (
+              <InlineError message={extensionState.error} onRetry={onExtend} />
+            ) : null}
+          </>
         ) : state.status === "error" ? (
           <InlineError message={state.error} onRetry={onRegenerate} />
         ) : (
@@ -1643,8 +1743,12 @@ function RecommendationSection({
   enrichments,
   rawgActive,
   blocked,
+  autoPaused,
   onRegenerate,
-  canRegenerate
+  canRegenerate,
+  onExtend,
+  canExtend,
+  extensionState
 }) {
   return (
     <section className="contentSection">
@@ -1653,27 +1757,46 @@ function RecommendationSection({
         title="Recommended Games"
         badge="AI"
         action={
-          <RegenerateButton
-            loading={state.status === "loading"}
-            disabled={!canRegenerate}
-            onClick={onRegenerate}
-          />
+          <>
+            <RegenerateButton
+              loading={state.status === "loading"}
+              disabled={!canRegenerate}
+              onClick={onRegenerate}
+            />
+            <ExtendButton
+              loading={extensionState.status === "loading"}
+              disabled={!canExtend}
+              onClick={onExtend}
+              title="Ask the LLM for more recommendations"
+            />
+          </>
         }
       />
       {state.status === "ready" ? (
-        <div className="recommendationGrid">
-          {state.items.map((item) => (
-            <RecommendationCard
-              key={item.game}
-              item={item}
-              enrichment={enrichments[item.game]}
-              rawgActive={rawgActive}
-            />
-          ))}
-        </div>
+        <>
+          <div className="recommendationGrid">
+            {state.items.map((item) => (
+              <RecommendationCard
+                key={item.game}
+                item={item}
+                enrichment={enrichments[item.game]}
+                rawgActive={rawgActive}
+              />
+            ))}
+          </div>
+          {extensionState.status === "error" ? (
+            <article className="llmPanel extensionPanel">
+              <InlineError message={extensionState.error} onRetry={onExtend} />
+            </article>
+          ) : null}
+        </>
       ) : state.status === "error" ? (
         <article className="llmPanel">
           <InlineError message={state.error} onRetry={onRegenerate} />
+        </article>
+      ) : state.status === "idle" && autoPaused ? (
+        <article className="llmPanel">
+          <p className="mutedText">Recommendations are paused until you refresh them.</p>
         </article>
       ) : (
         <article className="llmPanel">
@@ -1695,6 +1818,21 @@ function RegenerateButton({ loading, disabled, onClick }) {
     >
       {loading ? <Loader2 className="spin" size={16} /> : <RefreshCw size={16} />}
       Regenerate
+    </button>
+  );
+}
+
+function ExtendButton({ loading, disabled, onClick, title }) {
+  return (
+    <button
+      className="secondaryButton compactButton"
+      type="button"
+      onClick={onClick}
+      disabled={disabled || loading}
+      title={title}
+    >
+      {loading ? <Loader2 className="spin" size={16} /> : <Plus size={16} />}
+      Extend
     </button>
   );
 }
