@@ -1251,7 +1251,7 @@ function AppShell({ config, darkMode, onToggleDarkMode, onSettings }) {
       >
         Made with ❤️ by Siddhartha Bhattacharjee •{" "}
         <a
-          href="/LICENSE"
+          href="https://github.com/SiddharthaBhattacharjee/Sids_Game_Tracker/blob/master/LICENSE.txt"
           target="_blank"
           rel="noopener noreferrer"
           style={{ color: "inherit", textDecoration: "underline" }}
