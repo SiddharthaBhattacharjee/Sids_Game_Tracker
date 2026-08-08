@@ -102,7 +102,7 @@ export async function generateRecommendations(config, games, preferenceSignals, 
   // Add delay to avoid rate limiting (especially important after preferences extraction)
   await new Promise((resolve) => setTimeout(resolve, 1500));
   
-  const existingGames = games.map((game) => game.game);
+  const existingGames = games.map((game) => game.name);
   const content = await callChatCompletion({
     label: "recommendations",
     config,
@@ -177,7 +177,7 @@ export async function generateMoreRecommendations(
   // Add delay to avoid rate limiting
   await new Promise((resolve) => setTimeout(resolve, 1500));
 
-  const existingGames = games.map((game) => game.game);
+  const existingGames = games.map((game) => game.name);
   const alreadyRecommended = (existingRecommendations ?? []).map((item) => item.game);
   const content = await callChatCompletion({
     label: "recommendation-extension",
@@ -350,7 +350,7 @@ function serializeGames(games, enrichments) {
     const enrichment = enrichments?.[game.id];
 
     return {
-      game: game.game,
+      game: game.name,
       platform: game.platform,
       status: game.status,
       rating: game.rating,

@@ -1,33 +1,58 @@
 export const CONFIG_STORAGE_KEY = "gameInsightsConfig";
 
-const REQUIRED_FIELDS = ["sheetUrl", "apiUrl", "apiKey", "model"];
-
 export function emptyConfig() {
   return {
-    sheetUrl: "",
+    neonUrl: "",
+    igdbClientId: "",
+    igdbClientSecret: "",
+    igdbProxyUrl: "",
+    aiEnabled: false,
     apiUrl: "",
     apiKey: "",
-    model: "",
-    rawgApiKey: ""
+    model: ""
   };
 }
 
 export function normalizeConfig(config) {
   return {
-    sheetUrl: String(config?.sheetUrl ?? "").trim(),
+    neonUrl: String(config?.neonUrl ?? "").trim(),
+    igdbClientId: String(config?.igdbClientId ?? "").trim(),
+    igdbClientSecret: String(config?.igdbClientSecret ?? "").trim(),
+    igdbProxyUrl: String(config?.igdbProxyUrl ?? "").trim(),
+    aiEnabled: Boolean(config?.aiEnabled ?? false),
     apiUrl: String(config?.apiUrl ?? "").trim(),
     apiKey: String(config?.apiKey ?? "").trim(),
-    model: String(config?.model ?? "").trim(),
-    rawgApiKey: String(config?.rawgApiKey ?? "").trim()
+    model: String(config?.model ?? "").trim()
   };
+}
+
+export function igdbConfigured(config) {
+  const normalized = normalizeConfig(config);
+  return Boolean(normalized.igdbClientId && normalized.igdbClientSecret);
 }
 
 export function validateConfigShape(config) {
   const normalized = normalizeConfig(config);
-  const missing = REQUIRED_FIELDS.filter((field) => !normalized[field]);
 
-  if (missing.length > 0) {
-    throw new Error(`Missing required configuration: ${missing.join(", ")}.`);
+  if (normalized.neonUrl && !/^postgres(?:ql)?:\/\//i.test(normalized.neonUrl)) {
+    throw new Error("Neon URL must be a postgres:// or postgresql:// connection string.");
+  }
+
+  if (normalized.aiEnabled) {
+    const missing = ["apiUrl", "apiKey", "model"].filter((field) => !normalized[field]);
+
+    if (missing.length > 0) {
+      throw new Error(
+        `AI is enabled but missing: ${missing.join(", ")}. Disable AI or fill these in.`
+      );
+    }
+  }
+
+  const hasIgdbId = Boolean(normalized.igdbClientId);
+  const hasIgdbSecret = Boolean(normalized.igdbClientSecret);
+
+  if (hasIgdbId !== hasIgdbSecret) {
+    throw new Error("IGDB needs both Client ID and Client Secret, or leave both empty.");
   }
 
   return normalized;

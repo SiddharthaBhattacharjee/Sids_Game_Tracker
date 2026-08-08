@@ -1,4 +1,4 @@
-import { VALID_STATUSES } from "../services/sheet";
+import { VALID_STATUSES } from "../services/store";
 
 export const CHART_COLORS = ["#0f8b8d", "#f25c54", "#f6aa1c", "#3563a8", "#5b8c3a", "#8d5a97"];
 
@@ -8,9 +8,18 @@ export function computeAnalytics(games, enrichments = {}) {
   const genreCounts = {};
   const genreRatings = {};
 
+  let pricedCount = 0;
+  let totalValue = 0;
+
   games.forEach((game) => {
     statusCounts[game.status] = (statusCounts[game.status] ?? 0) + 1;
     platformCounts[game.platform] = (platformCounts[game.platform] ?? 0) + 1;
+
+    const price = Number(game.price) || 0;
+    if (price > 0) {
+      pricedCount += 1;
+      totalValue += price;
+    }
 
     const genres = enrichments[game.id]?.genres ?? [];
     genres.forEach((genre) => {
@@ -30,6 +39,11 @@ export function computeAnalytics(games, enrichments = {}) {
     statusDistribution: toChartData(statusCounts),
     platformDistribution: toChartData(platformCounts),
     genreDistribution: toChartData(genreCounts),
+    price: {
+      pricedCount,
+      totalValue,
+      averageValue: pricedCount > 0 ? totalValue / pricedCount : 0
+    },
     topLikedGenres: Object.entries(genreRatings)
   .map(([genre, value]) => {
     const avg = value.total / value.count;

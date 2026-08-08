@@ -10,11 +10,12 @@ export async function buildLlmCacheHash(config, games) {
     config: normalizeConfig(config),
     games: games.map((game) => ({
       id: game.id,
-      game: game.game,
+      name: game.name,
       platform: game.platform,
       status: game.status,
       rating: game.rating,
-      review: game.review
+      review: game.review,
+      price: game.price
     }))
   });
 

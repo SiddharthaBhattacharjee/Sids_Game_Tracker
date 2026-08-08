@@ -520,7 +520,7 @@ h1 {
   margin-top: 2px;
 }
 
-.rawgProgress {
+.loadProgress {
   align-items: center;
   color: var(--muted);
   display: flex;
@@ -978,5 +978,324 @@ h1 {
     height: auto;
     max-height: 210px;
     width: 100%;
+  }
+}
+
+/* ---------------------------------------------------------------- */
+/* Setup groups + AI toggle                                         */
+/* ---------------------------------------------------------------- */
+
+.setupGroup {
+  border-top: 1px solid var(--line);
+  margin-top: 20px;
+  padding-top: 18px;
+}
+
+.setupGroupTitle {
+  align-items: center;
+  color: var(--ink);
+  display: flex;
+  font-size: 0.95rem;
+  font-weight: 800;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.setupHint {
+  color: var(--muted);
+  font-size: 0.82rem;
+  margin: 0 0 12px;
+}
+
+.fullSpan {
+  grid-column: 1 / -1;
+}
+
+.disabledGroup {
+  opacity: 0.42;
+  pointer-events: none;
+  filter: grayscale(0.4);
+}
+
+.toggleSwitch {
+  align-items: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  gap: 8px;
+  padding: 0;
+}
+
+.toggleTrack {
+  background: var(--line-strong);
+  border-radius: 999px;
+  height: 22px;
+  position: relative;
+  transition: background 0.2s ease;
+  width: 42px;
+}
+
+.toggleSwitch.on .toggleTrack {
+  background: var(--teal);
+}
+
+.toggleThumb {
+  background: #fff;
+  border-radius: 50%;
+  height: 16px;
+  left: 3px;
+  position: absolute;
+  top: 3px;
+  transition: transform 0.2s ease;
+  width: 16px;
+}
+
+.toggleSwitch.on .toggleThumb {
+  transform: translateX(20px);
+}
+
+.toggleLabel {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+/* ---------------------------------------------------------------- */
+/* Toolbar + cards                                                  */
+/* ---------------------------------------------------------------- */
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 4px 0 24px;
+}
+
+.emptyState {
+  border: 1px dashed var(--line-strong);
+  border-radius: 12px;
+  color: var(--muted);
+  padding: 28px;
+  text-align: center;
+}
+
+.cardFooter {
+  align-items: center;
+  border-top: 1px solid var(--line);
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  margin-top: 12px;
+  padding-top: 10px;
+}
+
+.cardActions {
+  display: flex;
+  gap: 6px;
+}
+
+.iconButton {
+  align-items: center;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  cursor: pointer;
+  display: inline-flex;
+  height: 30px;
+  justify-content: center;
+  transition: all 0.15s ease;
+  width: 30px;
+}
+
+.iconButton:hover {
+  border-color: var(--line-strong);
+}
+
+.iconButton.primary:hover {
+  background: var(--teal);
+  border-color: var(--teal);
+  color: #fff;
+}
+
+.iconButton.danger:hover {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+
+.priceTag {
+  background: rgba(15, 139, 141, 0.12);
+  border-radius: 999px;
+  color: var(--teal);
+  font-size: 0.78rem;
+  font-weight: 800;
+  padding: 4px 10px;
+}
+
+.priceTag.free {
+  background: var(--surface-soft);
+  color: var(--muted);
+}
+
+.statusPill.backlog {
+  background: rgba(53, 99, 168, 0.16);
+  color: var(--blue);
+}
+
+/* ---------------------------------------------------------------- */
+/* Price tile                                                       */
+/* ---------------------------------------------------------------- */
+
+.priceStats {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 6px;
+}
+
+.priceStat {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.priceLabel {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.priceValue {
+  color: var(--ink);
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+/* ---------------------------------------------------------------- */
+/* Modal + forms                                                    */
+/* ---------------------------------------------------------------- */
+
+.modalOverlay {
+  align-items: center;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 20px;
+  position: fixed;
+  z-index: 50;
+}
+
+.modalCard {
+  max-height: 90vh;
+  max-width: 540px;
+  overflow-y: auto;
+  padding: 22px;
+  width: 100%;
+}
+
+.modalHeader {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.modalHeader h2 {
+  font-size: 1.2rem;
+  margin: 0;
+}
+
+.modalForm {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.modalForm textarea,
+.modalForm select {
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--ink);
+  font: inherit;
+  padding: 10px 12px;
+  width: 100%;
+}
+
+.modalForm textarea {
+  resize: vertical;
+}
+
+.formRow {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.formActions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+
+.formError {
+  background: var(--danger-soft);
+  border: 1px solid #f2beb5;
+  border-radius: 8px;
+  color: var(--danger);
+  font-size: 0.85rem;
+  margin: 0;
+  padding: 10px 12px;
+}
+
+.movePreview {
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+}
+
+.movePreview strong {
+  color: var(--ink);
+}
+
+.movePreview span {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.importPreview {
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.importCount {
+  color: var(--ink);
+  font-weight: 700;
+  margin: 0 0 8px;
+}
+
+.importPreview ul {
+  color: var(--ink);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.85rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+@media (max-width: 560px) {
+  .formRow {
+    grid-template-columns: 1fr;
   }
 }
