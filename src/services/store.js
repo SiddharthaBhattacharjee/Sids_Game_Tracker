@@ -231,6 +231,20 @@ function createNeonStore(connectionString) {
       return games.length;
     },
 
+    async importBacklog(items) {
+      await init();
+      if (!items.length) return 0;
+      await sql.transaction(
+        items.map(
+          (item) => sql`
+            INSERT INTO backlog (name, platform, price, image)
+            VALUES (${item.name}, ${item.platform}, ${sanitizePrice(item.price)}, ${sanitizeImage(item.image)})
+          `
+        )
+      );
+      return items.length;
+    },
+
     async listSubscriptions() {
       await init();
       const rows = await sql`SELECT id, name, cost, cycle FROM subscriptions ORDER BY id ASC`;
@@ -405,6 +419,17 @@ function createLocalStore() {
       });
       write(LOCAL_GAMES_KEY, rows);
       return games.length;
+    },
+
+    async importBacklog(items) {
+      if (!items.length) return 0;
+      const rows = read(LOCAL_BACKLOG_KEY);
+      let id = nextId(rows);
+      items.forEach((item) => {
+        rows.push(normalizeBacklog({ id: id++, ...item, price: sanitizePrice(item.price) }));
+      });
+      write(LOCAL_BACKLOG_KEY, rows);
+      return items.length;
     },
 
     async listSubscriptions() {

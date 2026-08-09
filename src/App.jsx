@@ -49,7 +49,7 @@ import {
 import { buildLlmCacheHash, loadCachedLlmData, saveCachedLlmData } from "./services/llmCache";
 import { fetchIgdbGame, fetchIgdbImageOptions, testIgdbConfig } from "./services/igdb";
 import { createStore, storeKind, SUBSCRIPTION_CYCLES, VALID_STATUSES } from "./services/store";
-import { gamesToCsv, parseGamesCsv } from "./utils/csv";
+import { gamesToCsv, parseImportCsv } from "./utils/csv";
 import { CHART_COLORS, computeAnalytics, computeCollectionValue, ratingToStars } from "./utils/analytics";
 
 const emptyIgdbState = { enabled: false, status: "disabled", loaded: 0, total: 0, message: "" };
@@ -842,7 +842,11 @@ function AppShell({ config, darkMode, onToggleDarkMode, onSettings }) {
   const handleUpdateBacklog = (id, values) => runAction(() => store.updateBacklog(id, values));
   const handleDeleteBacklog = (id) => runAction(() => store.deleteBacklog(id));
   const handleMoveBacklog = (id, details) => runAction(() => store.moveBacklogToGames(id, details));
-  const handleImport = (games) => runAction(() => store.importGames(games));
+  const handleImport = ({ games, backlog }) =>
+    runAction(async () => {
+      if (games.length) await store.importGames(games);
+      if (backlog.length) await store.importBacklog(backlog);
+    });
   const handleAddSubscription = (values) => runAction(() => store.addSubscription(values));
   const handleUpdateSubscription = (id, values) => runAction(() => store.updateSubscription(id, values));
   const handleDeleteSubscription = (id) => runAction(() => store.deleteSubscription(id));
@@ -2290,7 +2294,7 @@ function MoveForm({ item, busy, onSubmit, onCancel }) {
 }
 
 function ImportForm({ busy, onSubmit, onCancel }) {
-  const [games, setGames] = useState([]);
+  const [parsed, setParsed] = useState({ games: [], backlog: [] });
   const [parseError, setParseError] = useState("");
   const [fileName, setFileName] = useState("");
   const fileInputRef = useRef(null);
@@ -2302,11 +2306,11 @@ function ImportForm({ busy, onSubmit, onCancel }) {
     const reader = new FileReader();
     reader.onload = () => {
       try {
-        const parsed = parseGamesCsv(String(reader.result ?? ""));
-        setGames(parsed);
+        const result = parseImportCsv(String(reader.result ?? ""));
+        setParsed(result);
         setParseError("");
       } catch (error) {
-        setGames([]);
+        setParsed({ games: [], backlog: [] });
         setParseError(error.message || "Could not parse CSV.");
       }
     };
@@ -2314,10 +2318,13 @@ function ImportForm({ busy, onSubmit, onCancel }) {
     event.target.value = "";
   }
 
+  const total = parsed.games.length + parsed.backlog.length;
+
   return (
     <div className="modalForm">
       <p className="setupHint">
-        Expected header: <code>game,platform,status,rating,review</code>. Price defaults to 0.
+        Supports the exported CSV (with a <code>List</code> column) and the legacy{" "}
+        <code>game,platform,status,rating,review</code> format.
       </p>
       <button className="secondaryButton" type="button" onClick={() => fileInputRef.current?.click()}>
         <Upload size={16} />
@@ -2327,16 +2334,27 @@ function ImportForm({ busy, onSubmit, onCancel }) {
 
       {parseError ? <p className="formError">{parseError}</p> : null}
 
-      {games.length > 0 ? (
+      {total > 0 ? (
         <div className="importPreview">
-          <p className="importCount">{games.length} game{games.length === 1 ? "" : "s"} ready to import.</p>
+          <p className="importCount">
+            {parsed.games.length} game{parsed.games.length === 1 ? "" : "s"}
+            {parsed.backlog.length > 0
+              ? ` + ${parsed.backlog.length} backlog entr${parsed.backlog.length === 1 ? "y" : "ies"}`
+              : ""}{" "}
+            ready to import.
+          </p>
           <ul>
-            {games.slice(0, 6).map((game, index) => (
-              <li key={`${game.name}-${index}`}>
+            {parsed.games.slice(0, 5).map((game, index) => (
+              <li key={`g-${game.name}-${index}`}>
                 <strong>{game.name}</strong> — {game.platform} · {game.status} · {game.rating}/10
               </li>
             ))}
-            {games.length > 6 ? <li className="mutedText">…and {games.length - 6} more</li> : null}
+            {parsed.backlog.slice(0, 3).map((item, index) => (
+              <li key={`b-${item.name}-${index}`}>
+                <strong>{item.name}</strong> — {item.platform} · backlog
+              </li>
+            ))}
+            {total > 8 ? <li className="mutedText">…and {total - 8} more</li> : null}
           </ul>
         </div>
       ) : null}
@@ -2345,9 +2363,14 @@ function ImportForm({ busy, onSubmit, onCancel }) {
         <button className="ghostButton" type="button" onClick={onCancel} disabled={busy}>
           Cancel
         </button>
-        <button className="primaryButton" type="button" onClick={() => onSubmit(games)} disabled={busy || games.length === 0}>
+        <button
+          className="primaryButton"
+          type="button"
+          onClick={() => onSubmit(parsed)}
+          disabled={busy || total === 0}
+        >
           {busy ? <Loader2 className="spin" size={16} /> : <FileUp size={16} />}
-          Import {games.length > 0 ? games.length : ""}
+          Import {total > 0 ? total : ""}
         </button>
       </div>
     </div>

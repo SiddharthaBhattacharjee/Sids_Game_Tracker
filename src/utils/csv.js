@@ -81,9 +81,15 @@ function getCell(row, index) {
   return String(row[index] ?? "").trim();
 }
 
-// Parses the legacy import format: game,platform,status,rating,review
-// Returns normalized game objects ready to write into the store (price defaults to 0).
-export function parseGamesCsv(csvText) {
+function parsePriceCell(text) {
+  const value = Number(text);
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+// Parses either the exported CSV (with a `List` column, plus Price/Image and
+// backlog rows) or the legacy `game,platform,status,rating,review` format.
+// Returns { games, backlog } ready to write into the store.
+export function parseImportCsv(csvText) {
   const rows = parseCsv(csvText).filter((row) => row.some((cell) => cell.trim()));
 
   if (rows.length <= 1) {
@@ -91,31 +97,53 @@ export function parseGamesCsv(csvText) {
   }
 
   const headers = rows[0].map((header) => header.trim().toLowerCase());
-  const missing = IMPORT_COLUMNS.filter((column) => !headers.includes(column));
+  const indexByColumn = new Map(headers.map((header, index) => [header, index]));
+  const has = (column) => indexByColumn.has(column);
+  const cell = (row, column) => getCell(row, indexByColumn.get(column));
 
-  if (missing.length > 0) {
-    throw new Error(`Missing column "${missing[0]}" -> expected header: game,platform,status,rating,review.`);
+  const missingCore = ["game", "platform"].filter((column) => !has(column));
+  if (missingCore.length > 0) {
+    throw new Error(`Missing column "${missingCore[0]}" -> expected at least game and platform.`);
   }
 
-  const indexByColumn = new Map(headers.map((header, index) => [header, index]));
+  const hasList = has("list");
+  if (!hasList) {
+    const missing = IMPORT_COLUMNS.filter((column) => !has(column));
+    if (missing.length > 0) {
+      throw new Error(
+        `Missing column "${missing[0]}" -> expected header: game,platform,status,rating,review (or the exported format).`
+      );
+    }
+  }
+
   const games = [];
+  const backlog = [];
 
   rows.slice(1).forEach((row, rowIndex) => {
     const displayRow = rowIndex + 2;
-    const name = getCell(row, indexByColumn.get("game"));
-    const platform = getCell(row, indexByColumn.get("platform"));
-    const status = getCell(row, indexByColumn.get("status"));
-    const ratingText = getCell(row, indexByColumn.get("rating"));
-    const rating = Number(ratingText);
-    const review = getCell(row, indexByColumn.get("review"));
+    const name = cell(row, "game");
+    const platform = cell(row, "platform");
 
     if (!name) {
       throw new Error(`Missing game name on row ${displayRow}.`);
     }
-
     if (!platform) {
       throw new Error(`Missing platform on row ${displayRow}.`);
     }
+
+    const price = has("price") ? parsePriceCell(cell(row, "price")) : 0;
+    const image = has("image") ? cell(row, "image") : "";
+    const listType = hasList ? cell(row, "list").toLowerCase() : "played";
+
+    if (listType === "backlog") {
+      backlog.push({ name, platform, price, image });
+      return;
+    }
+
+    const status = cell(row, "status");
+    const ratingText = cell(row, "rating");
+    const rating = Number(ratingText);
+    const review = has("review") ? cell(row, "review") : "";
 
     if (!VALID_STATUSES.includes(status)) {
       throw new Error(
@@ -127,12 +155,12 @@ export function parseGamesCsv(csvText) {
       throw new Error(`Invalid rating on row ${displayRow} -> Rating must be numeric (0-10).`);
     }
 
-    games.push({ name, platform, status, rating, review, price: 0 });
+    games.push({ name, platform, status, rating, review, price, image });
   });
 
-  if (games.length === 0) {
+  if (games.length === 0 && backlog.length === 0) {
     throw new Error("No valid rows found in CSV.");
   }
 
-  return games;
+  return { games, backlog };
 }
