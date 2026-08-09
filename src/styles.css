@@ -964,20 +964,40 @@ h1 {
     width: 100%;
   }
 
-  .gameCard,
+  /* Keep the compact side-thumbnail layout on phones and enforce a
+     consistent 3:4 cover so images never stretch or crop inconsistently. */
+  .gameCard {
+    grid-template-columns: 96px minmax(0, 1fr);
+  }
+
+  .gameCard.noCover {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .recommendationCard {
-    grid-template-columns: 1fr;
+    grid-template-columns: 90px minmax(0, 1fr);
+  }
+
+  .recommendationCard.noCover {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .coverImage,
   .coverSkeleton,
-  .coverFallback,
+  .coverFallback {
+    aspect-ratio: 3 / 4;
+    height: 128px;
+    width: 96px;
+    object-fit: cover;
+  }
+
   .recommendationCard .coverImage,
   .recommendationCard .coverSkeleton,
   .recommendationCard .coverFallback {
-    height: auto;
-    max-height: 210px;
-    width: 100%;
+    aspect-ratio: 3 / 4;
+    height: 120px;
+    width: 90px;
+    object-fit: cover;
   }
 }
 
@@ -1296,6 +1316,273 @@ h1 {
 
 @media (max-width: 560px) {
   .formRow {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---------------------------------------------------------------- */
+/* Collection value section                                         */
+/* ---------------------------------------------------------------- */
+
+.valueLayout {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+}
+
+.valueGrid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.valueCard {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow: hidden;
+  padding: 16px;
+  position: relative;
+}
+
+.valueCard::before {
+  content: "";
+  background: var(--teal);
+  height: 3px;
+  inset: 0 0 auto 0;
+  position: absolute;
+}
+
+.valueCard.tone-total::before {
+  background: linear-gradient(90deg, var(--teal), var(--blue));
+}
+
+.valueCard.tone-played::before {
+  background: var(--green);
+}
+
+.valueCard.tone-backlog::before {
+  background: var(--amber);
+}
+
+.valueCardLabel {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.valueCardAmount {
+  color: var(--ink);
+  font-size: 1.7rem;
+  font-weight: 850;
+  letter-spacing: -0.5px;
+  line-height: 1.1;
+}
+
+.valueCardSub {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.subscriptionCard {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+
+.subscriptionHead {
+  align-items: flex-start;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.subscriptionHead h3 {
+  color: var(--ink);
+  font-size: 0.98rem;
+  margin: 0;
+}
+
+.subscriptionTotals {
+  color: var(--teal);
+  font-size: 0.82rem;
+  font-weight: 700;
+  margin: 4px 0 0;
+}
+
+.subscriptionTotals.muted {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.subscriptionList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.subscriptionList li {
+  align-items: center;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  padding: 8px 10px;
+}
+
+.subscriptionInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.subscriptionInfo strong {
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.subscriptionInfo span {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+/* ---------------------------------------------------------------- */
+/* Image picker (edit modal)                                        */
+/* ---------------------------------------------------------------- */
+
+.imagePicker {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+
+.imagePickerHead {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.fieldLabel {
+  color: var(--ink);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.linkButton {
+  background: none;
+  border: none;
+  color: var(--teal);
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 0;
+}
+
+.imagePickerCurrent {
+  display: flex;
+}
+
+.imagePickerThumb {
+  aspect-ratio: 3 / 4;
+  border-radius: 8px;
+  height: 120px;
+  object-fit: cover;
+  width: 90px;
+}
+
+.imagePickerThumb.selected {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+
+.imagePickerEmpty {
+  align-items: center;
+  background: var(--surface-soft);
+  border: 1px dashed var(--line-strong);
+  border-radius: 8px;
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  font-size: 0.78rem;
+  gap: 4px;
+  height: 120px;
+  justify-content: center;
+  width: 90px;
+}
+
+.imagePickerSearch {
+  display: flex;
+  gap: 8px;
+}
+
+.imagePickerSearch input {
+  flex: 1;
+}
+
+.imageOptionsGrid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.imageOption {
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow: hidden;
+  padding: 0 0 4px;
+  text-align: center;
+}
+
+.imageOption:hover {
+  border-color: var(--line-strong);
+}
+
+.imageOption.selected {
+  border-color: var(--teal);
+  outline: 2px solid var(--teal);
+}
+
+.imageOption img {
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+  width: 100%;
+}
+
+.imageOptionLabel {
+  color: var(--muted);
+  font-size: 0.66rem;
+  line-height: 1.2;
+  overflow: hidden;
+  padding: 0 4px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .valueLayout {
     grid-template-columns: 1fr;
   }
 }

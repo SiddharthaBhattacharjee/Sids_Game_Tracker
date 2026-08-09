@@ -6,18 +6,11 @@ export const LLM_CACHE_STORAGE_KEY = "gameInsightsLlmCache";
 const CACHE_SCHEMA_VERSION = 1;
 
 export async function buildLlmCacheHash(config, games) {
-  const payload = stableStringify({
-    config: normalizeConfig(config),
-    games: games.map((game) => ({
-      id: game.id,
-      name: game.name,
-      platform: game.platform,
-      status: game.status,
-      rating: game.rating,
-      review: game.review,
-      price: game.price
-    }))
-  });
+  // Intentionally independent of the games list: AI results persist across
+  // add/edit/delete and only refresh when the user regenerates them. The games
+  // arg is kept for call-site compatibility but does not affect the key.
+  void games;
+  const payload = stableStringify({ config: normalizeConfig(config) });
 
   return sha256(payload);
 }

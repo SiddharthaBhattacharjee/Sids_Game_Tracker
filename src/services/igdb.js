@@ -20,6 +20,11 @@ function buildImageUrl(imageId) {
   return `https://images.igdb.com/igdb/image/upload/${IMAGE_SIZE}/${imageId}.jpg`;
 }
 
+function buildArtworkUrl(imageId) {
+  if (!imageId) return "";
+  return `https://images.igdb.com/igdb/image/upload/t_720p/${imageId}.jpg`;
+}
+
 async function queryIgdb(config, query, signal) {
   const normalized = normalizeConfig(config);
 
@@ -101,6 +106,61 @@ export async function fetchIgdbGame(gameName, config, signal) {
   igdbCache.set(cacheKey, result);
   writeStoredIgdbGame(cacheKey, result);
   return result;
+}
+
+// On-demand: fetch multiple candidate images for the image picker. Each option
+// is a cover (or artwork) from a candidate game, labelled with name + year so
+// the user can pick the correct game / a nicer image. Not cached — only runs
+// when the user opens the picker.
+export async function fetchIgdbImageOptions(term, config, signal, limit = 10) {
+  const normalized = normalizeConfig(config);
+  if (!normalized.igdbClientId || !normalized.igdbClientSecret) {
+    return [];
+  }
+
+  const search = escapeSearch(term);
+  if (!search) {
+    return [];
+  }
+
+  const query =
+    `search "${search}"; fields name,first_release_date,platforms.name,cover.image_id,artworks.image_id; limit ${limit};`;
+  const results = await queryIgdb(config, query, signal);
+
+  const options = [];
+  for (const game of results) {
+    const year = game.first_release_date
+      ? new Date(game.first_release_date * 1000).getUTCFullYear()
+      : null;
+    const platforms = Array.isArray(game.platforms)
+      ? game.platforms.map((platform) => platform.name).filter(Boolean)
+      : [];
+    const label = year ? `${game.name} (${year})` : game.name;
+
+    if (game.cover?.image_id) {
+      options.push({
+        id: `${game.id}-cover`,
+        image: buildImageUrl(game.cover.image_id),
+        label,
+        year,
+        platforms
+      });
+    }
+
+    (Array.isArray(game.artworks) ? game.artworks : []).slice(0, 2).forEach((art, index) => {
+      if (art?.image_id) {
+        options.push({
+          id: `${game.id}-art${index}`,
+          image: buildArtworkUrl(art.image_id),
+          label: `${label} · art`,
+          year,
+          platforms
+        });
+      }
+    });
+  }
+
+  return options;
 }
 
 function normalizeName(value) {

@@ -8,18 +8,9 @@ export function computeAnalytics(games, enrichments = {}) {
   const genreCounts = {};
   const genreRatings = {};
 
-  let pricedCount = 0;
-  let totalValue = 0;
-
   games.forEach((game) => {
     statusCounts[game.status] = (statusCounts[game.status] ?? 0) + 1;
     platformCounts[game.platform] = (platformCounts[game.platform] ?? 0) + 1;
-
-    const price = Number(game.price) || 0;
-    if (price > 0) {
-      pricedCount += 1;
-      totalValue += price;
-    }
 
     const genres = enrichments[game.id]?.genres ?? [];
     genres.forEach((genre) => {
@@ -39,11 +30,6 @@ export function computeAnalytics(games, enrichments = {}) {
     statusDistribution: toChartData(statusCounts),
     platformDistribution: toChartData(platformCounts),
     genreDistribution: toChartData(genreCounts),
-    price: {
-      pricedCount,
-      totalValue,
-      averageValue: pricedCount > 0 ? totalValue / pricedCount : 0
-    },
     topLikedGenres: Object.entries(genreRatings)
   .map(([genre, value]) => {
     const avg = value.total / value.count;
@@ -60,6 +46,40 @@ export function computeAnalytics(games, enrichments = {}) {
   })
   .sort((a, b) => b.score - a.score)
   .slice(0, 5)
+  };
+}
+
+export function computeCollectionValue(games = [], backlog = [], subscriptions = []) {
+  const sumPrice = (list) =>
+    list.reduce((sum, item) => sum + (Number(item.price) > 0 ? Number(item.price) : 0), 0);
+  const countPaid = (list) => list.filter((item) => Number(item.price) > 0).length;
+
+  const playedValue = sumPrice(games);
+  const backlogValue = sumPrice(backlog);
+  const totalValue = playedValue + backlogValue;
+
+  const playedPaid = countPaid(games);
+  const backlogPaid = countPaid(backlog);
+  const totalPaid = playedPaid + backlogPaid;
+
+  const subscriptionMonthly = subscriptions.reduce((sum, sub) => {
+    const cost = Number(sub.cost) > 0 ? Number(sub.cost) : 0;
+    return sum + (sub.cycle === "Yearly" ? cost / 12 : cost);
+  }, 0);
+
+  return {
+    playedValue,
+    backlogValue,
+    totalValue,
+    playedPaid,
+    backlogPaid,
+    totalPaid,
+    avgPlayed: playedPaid ? playedValue / playedPaid : 0,
+    avgBacklog: backlogPaid ? backlogValue / backlogPaid : 0,
+    avgGame: totalPaid ? totalValue / totalPaid : 0,
+    subscriptionMonthly,
+    subscriptionYearly: subscriptionMonthly * 12,
+    subscriptionCount: subscriptions.length
   };
 }
 

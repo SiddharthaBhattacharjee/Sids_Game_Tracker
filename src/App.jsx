@@ -7,6 +7,7 @@ import {
   FileUp,
   Gamepad2,
   ImageOff,
+  Image as ImageIcon,
   KeyRound,
   Library,
   Loader2,
@@ -14,6 +15,7 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  Repeat,
   Save,
   Settings,
   Sparkles,
@@ -45,10 +47,10 @@ import {
   testLlmConfig
 } from "./services/llm";
 import { buildLlmCacheHash, loadCachedLlmData, saveCachedLlmData } from "./services/llmCache";
-import { fetchIgdbGame, testIgdbConfig } from "./services/igdb";
-import { createStore, storeKind, VALID_STATUSES } from "./services/store";
+import { fetchIgdbGame, fetchIgdbImageOptions, testIgdbConfig } from "./services/igdb";
+import { createStore, storeKind, SUBSCRIPTION_CYCLES, VALID_STATUSES } from "./services/store";
 import { parseGamesCsv } from "./utils/csv";
-import { CHART_COLORS, computeAnalytics, ratingToStars } from "./utils/analytics";
+import { CHART_COLORS, computeAnalytics, computeCollectionValue, ratingToStars } from "./utils/analytics";
 
 const emptyIgdbState = { enabled: false, status: "disabled", loaded: 0, total: 0, message: "" };
 
@@ -534,6 +536,7 @@ function AppShell({ config, darkMode, onToggleDarkMode, onSettings }) {
     backlog: [],
     error: ""
   });
+  const [subscriptions, setSubscriptions] = useState([]);
   const [enrichments, setEnrichments] = useState({});
   const [backlogEnrichments, setBacklogEnrichments] = useState({});
   const [igdbState, setIgdbState] = useState(igdbOn ? { ...emptyIgdbState, enabled: true, status: "idle" } : emptyIgdbState);
@@ -559,10 +562,11 @@ function AppShell({ config, darkMode, onToggleDarkMode, onSettings }) {
     setRecommendationEnrichments({});
     setLlmCacheState({ status: "idle", hash: "", data: null });
 
-    Promise.all([store.listGames(), store.listBacklog()])
-      .then(([games, backlog]) => {
+    Promise.all([store.listGames(), store.listBacklog(), store.listSubscriptions()])
+      .then(([games, backlog, subs]) => {
         if (!active) return;
         setDataState({ status: "ready", games, backlog, error: "" });
+        setSubscriptions(subs);
       })
       .catch((error) => {
         if (!active) return;
@@ -778,6 +782,11 @@ function AppShell({ config, darkMode, onToggleDarkMode, onSettings }) {
     return computeAnalytics(dataState.games, enrichments);
   }, [dataState.status, dataState.games, enrichments]);
 
+  const collectionValue = useMemo(
+    () => computeCollectionValue(dataState.games, dataState.backlog, subscriptions),
+    [dataState.games, dataState.backlog, subscriptions]
+  );
+
   function saveAndHydrateLlmCache(partialData) {
     const saved = saveCachedLlmData(llmCacheState.hash, partialData);
     if (saved) {
@@ -815,6 +824,10 @@ function AppShell({ config, darkMode, onToggleDarkMode, onSettings }) {
   const handleDeleteBacklog = (id) => runAction(() => store.deleteBacklog(id));
   const handleMoveBacklog = (id, details) => runAction(() => store.moveBacklogToGames(id, details));
   const handleImport = (games) => runAction(() => store.importGames(games));
+  const handleAddSubscription = (values) => runAction(() => store.addSubscription(values));
+  const handleUpdateSubscription = (id, values) => runAction(() => store.updateSubscription(id, values));
+  const handleDeleteSubscription = (id) => runAction(() => store.deleteSubscription(id));
+  const findImageOptions = (term, signal) => fetchIgdbImageOptions(term, config, signal);
 
   async function regeneratePreferences() {
     manualLlmInFlightRef.current = true;
@@ -920,6 +933,15 @@ function AppShell({ config, darkMode, onToggleDarkMode, onSettings }) {
             igdbConfigured={igdbOn}
           />
 
+          <CollectionValueSection
+            loading={dataState.status === "loading"}
+            value={collectionValue}
+            subscriptions={subscriptions}
+            onAddSubscription={() => setModal({ type: "subscription" })}
+            onEditSubscription={(sub) => setModal({ type: "subscription", payload: sub })}
+            onDeleteSubscription={(sub) => setModal({ type: "deleteSubscription", payload: sub })}
+          />
+
           <div className="toolbar">
             <button className="primaryButton compactButton" type="button" onClick={() => setModal({ type: "game" })}>
               <Plus size={16} />
@@ -997,6 +1019,8 @@ function AppShell({ config, darkMode, onToggleDarkMode, onSettings }) {
           modal={modal}
           busy={busy}
           error={actionError}
+          igdbConfigured={igdbOn}
+          onFindImages={findImageOptions}
           onClose={() => {
             setModal(null);
             setActionError("");
@@ -1009,6 +1033,9 @@ function AppShell({ config, darkMode, onToggleDarkMode, onSettings }) {
           onDeleteBacklog={handleDeleteBacklog}
           onMoveBacklog={handleMoveBacklog}
           onImport={handleImport}
+          onAddSubscription={handleAddSubscription}
+          onUpdateSubscription={handleUpdateSubscription}
+          onDeleteSubscription={handleDeleteSubscription}
         />
       ) : null}
     </main>
@@ -1063,7 +1090,6 @@ function DashboardSection({ loading, analytics, igdbState, igdbConfigured }) {
         <div className="dashboardGrid">
           <StatusTile data={analytics.statusDistribution} />
           <PlatformTile data={analytics.platformDistribution} />
-          {analytics.price.pricedCount > 0 ? <PriceTile price={analytics.price} /> : null}
           {igdbConfigured ? (
             igdbState.status === "loading" || igdbState.status === "idle" ? (
               <IgdbLoadingTile igdbState={igdbState} />
@@ -1096,27 +1122,115 @@ function DashboardSkeleton() {
   );
 }
 
-function PriceTile({ price }) {
+function CollectionValueSection({
+  loading,
+  value,
+  subscriptions,
+  onAddSubscription,
+  onEditSubscription,
+  onDeleteSubscription
+}) {
   return (
-    <article className="chartTile">
-      <h3>
-        <Wallet size={16} style={{ verticalAlign: "-2px", marginRight: "6px" }} />
-        Collection value
-      </h3>
-      <div className="priceStats">
-        <div className="priceStat">
-          <span className="priceLabel">Total value</span>
-          <strong className="priceValue">{formatMoney(price.totalValue)}</strong>
+    <section className="contentSection">
+      <SectionHeader icon={<Wallet size={20} />} title="Collection Value" badge="Spend" />
+      {loading ? (
+        <div className="valueGrid">
+          {[0, 1, 2].map((item) => (
+            <article className="valueCard skeletonTile" key={item}>
+              <div className="skeletonLine short" />
+              <div className="skeletonLine" />
+            </article>
+          ))}
         </div>
-        <div className="priceStat">
-          <span className="priceLabel">Avg / paid game</span>
-          <strong className="priceValue">{formatMoney(price.averageValue)}</strong>
+      ) : (
+        <div className="valueLayout">
+          <div className="valueGrid">
+            <ValueCard
+              tone="total"
+              label="Total value"
+              amount={value.totalValue}
+              sub={`${value.totalPaid} paid game${value.totalPaid === 1 ? "" : "s"} · avg ${formatMoney(value.avgGame)}`}
+            />
+            <ValueCard
+              tone="played"
+              label="Played value"
+              amount={value.playedValue}
+              sub={`${value.playedPaid} paid · avg ${formatMoney(value.avgPlayed)}`}
+            />
+            <ValueCard
+              tone="backlog"
+              label="Backlog value"
+              amount={value.backlogValue}
+              sub={`${value.backlogPaid} paid · avg ${formatMoney(value.avgBacklog)}`}
+            />
+          </div>
+
+          <article className="subscriptionCard">
+            <div className="subscriptionHead">
+              <div>
+                <h3>
+                  <Repeat size={16} style={{ verticalAlign: "-2px", marginRight: "6px" }} />
+                  Ongoing subscriptions
+                </h3>
+                {value.subscriptionCount > 0 ? (
+                  <p className="subscriptionTotals">
+                    {formatMoney(value.subscriptionMonthly)}/mo · {formatMoney(value.subscriptionYearly)}/yr
+                  </p>
+                ) : (
+                  <p className="subscriptionTotals muted">No subscriptions added.</p>
+                )}
+              </div>
+              <button className="secondaryButton compactButton" type="button" onClick={onAddSubscription}>
+                <Plus size={15} />
+                Add
+              </button>
+            </div>
+
+            {subscriptions.length > 0 ? (
+              <ul className="subscriptionList">
+                {subscriptions.map((sub) => (
+                  <li key={sub.id}>
+                    <div className="subscriptionInfo">
+                      <strong>{sub.name}</strong>
+                      <span>
+                        {formatMoney(sub.cost)} / {sub.cycle === "Yearly" ? "year" : "month"}
+                      </span>
+                    </div>
+                    <div className="cardActions">
+                      <button
+                        className="iconButton"
+                        type="button"
+                        title="Edit"
+                        onClick={() => onEditSubscription(sub)}
+                      >
+                        <Pencil size={14} />
+                      </button>
+                      <button
+                        className="iconButton danger"
+                        type="button"
+                        title="Delete"
+                        onClick={() => onDeleteSubscription(sub)}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </article>
         </div>
-        <div className="priceStat">
-          <span className="priceLabel">Paid games</span>
-          <strong className="priceValue">{price.pricedCount}</strong>
-        </div>
-      </div>
+      )}
+    </section>
+  );
+}
+
+function ValueCard({ tone, label, amount, sub }) {
+  return (
+    <article className={`valueCard tone-${tone}`}>
+      <span className="valueCardLabel">{label}</span>
+      <strong className="valueCardAmount">{formatMoney(amount)}</strong>
+      <span className="valueCardSub">{sub}</span>
     </article>
   );
 }
@@ -1384,10 +1498,13 @@ function GameListSection({ loading, games, enrichments, igdbState, igdbConfigure
 }
 
 function GameCard({ game, enrichment, igdbState, igdbConfigured, onEdit, onDelete }) {
-  const showCover = igdbConfigured && igdbState.status !== "disabled";
+  const hasOverride = Boolean(game.image);
+  const showCover = hasOverride || (igdbConfigured && igdbState.status !== "disabled");
   return (
     <article className={`gameCard ${showCover ? "" : "noCover"}`}>
-      {showCover ? <CoverSlot enrichment={enrichment} loading={igdbState.status === "loading"} /> : null}
+      {showCover ? (
+        <CoverSlot image={game.image} enrichment={enrichment} loading={!hasOverride && igdbState.status === "loading"} />
+      ) : null}
       <div className="gameBody">
         <div className="gameTitleRow">
           <div>
@@ -1456,9 +1573,13 @@ function BacklogSection({ loading, backlog, enrichments, igdbConfigured, onEdit,
 }
 
 function BacklogCard({ item, enrichment, igdbConfigured, onEdit, onDelete, onMove }) {
+  const hasOverride = Boolean(item.image);
+  const showCover = hasOverride || igdbConfigured;
   return (
-    <article className={`gameCard ${igdbConfigured ? "" : "noCover"}`}>
-      {igdbConfigured ? <CoverSlot enrichment={enrichment} loading={!enrichment} /> : null}
+    <article className={`gameCard ${showCover ? "" : "noCover"}`}>
+      {showCover ? (
+        <CoverSlot image={item.image} enrichment={enrichment} loading={!hasOverride && !enrichment} />
+      ) : null}
       <div className="gameBody">
         <div className="gameTitleRow">
           <div>
@@ -1487,9 +1608,10 @@ function BacklogCard({ item, enrichment, igdbConfigured, onEdit, onDelete, onMov
   );
 }
 
-function CoverSlot({ enrichment, loading }) {
-  if (enrichment?.image) {
-    return <img className="coverImage" src={enrichment.image} alt="" loading="lazy" />;
+function CoverSlot({ enrichment, loading, image }) {
+  const src = image || enrichment?.image;
+  if (src) {
+    return <img className="coverImage" src={src} alt="" loading="lazy" />;
   }
   if (loading && !enrichment) {
     return <div className="coverSkeleton" />;
@@ -1719,6 +1841,8 @@ function ModalHost({
   modal,
   busy,
   error,
+  igdbConfigured,
+  onFindImages,
   onClose,
   onAddGame,
   onUpdateGame,
@@ -1727,7 +1851,10 @@ function ModalHost({
   onUpdateBacklog,
   onDeleteBacklog,
   onMoveBacklog,
-  onImport
+  onImport,
+  onAddSubscription,
+  onUpdateSubscription,
+  onDeleteSubscription
 }) {
   let title = "";
   let body = null;
@@ -1739,6 +1866,8 @@ function ModalHost({
       <GameForm
         initial={modal.payload}
         busy={busy}
+        igdbConfigured={igdbConfigured}
+        onFindImages={onFindImages}
         onSubmit={(values) => (editing ? onUpdateGame(modal.payload.id, values) : onAddGame(values))}
         onCancel={onClose}
       />
@@ -1750,6 +1879,8 @@ function ModalHost({
       <BacklogForm
         initial={modal.payload}
         busy={busy}
+        igdbConfigured={igdbConfigured}
+        onFindImages={onFindImages}
         onSubmit={(values) => (editing ? onUpdateBacklog(modal.payload.id, values) : onAddBacklog(values))}
         onCancel={onClose}
       />
@@ -1767,6 +1898,19 @@ function ModalHost({
   } else if (modal.type === "import") {
     title = "Import Games from CSV";
     body = <ImportForm busy={busy} onSubmit={onImport} onCancel={onClose} />;
+  } else if (modal.type === "subscription") {
+    const editing = Boolean(modal.payload);
+    title = editing ? "Edit Subscription" : "Add Subscription";
+    body = (
+      <SubscriptionForm
+        initial={modal.payload}
+        busy={busy}
+        onSubmit={(values) =>
+          editing ? onUpdateSubscription(modal.payload.id, values) : onAddSubscription(values)
+        }
+        onCancel={onClose}
+      />
+    );
   } else if (modal.type === "deleteGame") {
     title = "Delete Game";
     body = (
@@ -1784,6 +1928,16 @@ function ModalHost({
         message={`Remove "${modal.payload.name}" from your backlog?`}
         busy={busy}
         onConfirm={() => onDeleteBacklog(modal.payload.id)}
+        onCancel={onClose}
+      />
+    );
+  } else if (modal.type === "deleteSubscription") {
+    title = "Delete Subscription";
+    body = (
+      <ConfirmDelete
+        message={`Remove the "${modal.payload.name}" subscription?`}
+        busy={busy}
+        onConfirm={() => onDeleteSubscription(modal.payload.id)}
         onCancel={onClose}
       />
     );
@@ -1812,14 +1966,15 @@ function ModalHost({
   );
 }
 
-function GameForm({ initial, busy, onSubmit, onCancel }) {
+function GameForm({ initial, busy, igdbConfigured, onFindImages, onSubmit, onCancel }) {
   const [values, setValues] = useState(() => ({
     name: initial?.name ?? "",
     platform: initial?.platform ?? "",
     status: initial?.status ?? "Ongoing",
     rating: initial?.rating != null ? String(initial.rating) : "",
     review: initial?.review ?? "",
-    price: initial?.price != null ? String(initial.price) : ""
+    price: initial?.price != null ? String(initial.price) : "",
+    image: initial?.image ?? ""
   }));
   const [localError, setLocalError] = useState("");
 
@@ -1841,7 +1996,8 @@ function GameForm({ initial, busy, onSubmit, onCancel }) {
       status: values.status,
       rating: Number(values.rating),
       review: values.review.trim(),
-      price: values.price === "" ? 0 : Number(values.price)
+      price: values.price === "" ? 0 : Number(values.price),
+      image: values.image
     });
   }
 
@@ -1880,16 +2036,25 @@ function GameForm({ initial, busy, onSubmit, onCancel }) {
         <span>Review</span>
         <textarea rows={3} value={values.review} onChange={(e) => set("review", e.target.value)} />
       </label>
+      {igdbConfigured ? (
+        <ImagePicker
+          gameName={values.name}
+          image={values.image}
+          onFindImages={onFindImages}
+          onPick={(url) => set("image", url)}
+        />
+      ) : null}
       <FormActions busy={busy} onCancel={onCancel} submitLabel={initial ? "Save Changes" : "Add Game"} />
     </form>
   );
 }
 
-function BacklogForm({ initial, busy, onSubmit, onCancel }) {
+function BacklogForm({ initial, busy, igdbConfigured, onFindImages, onSubmit, onCancel }) {
   const [values, setValues] = useState(() => ({
     name: initial?.name ?? "",
     platform: initial?.platform ?? "",
-    price: initial?.price != null ? String(initial.price) : ""
+    price: initial?.price != null ? String(initial.price) : "",
+    image: initial?.image ?? ""
   }));
   const [localError, setLocalError] = useState("");
 
@@ -1915,7 +2080,8 @@ function BacklogForm({ initial, busy, onSubmit, onCancel }) {
     onSubmit({
       name: values.name.trim(),
       platform: values.platform.trim(),
-      price: values.price === "" ? 0 : Number(values.price)
+      price: values.price === "" ? 0 : Number(values.price),
+      image: values.image
     });
   }
 
@@ -1934,7 +2100,16 @@ function BacklogForm({ initial, busy, onSubmit, onCancel }) {
         <span>Price (optional)</span>
         <input type="number" min="0" step="0.01" placeholder="0" value={values.price} onChange={(e) => set("price", e.target.value)} />
       </label>
-      <p className="setupHint">Image and genre are enriched from IGDB automatically when configured.</p>
+      {igdbConfigured ? (
+        <ImagePicker
+          gameName={values.name}
+          image={values.image}
+          onFindImages={onFindImages}
+          onPick={(url) => set("image", url)}
+        />
+      ) : (
+        <p className="setupHint">Image and genre are enriched from IGDB automatically when configured.</p>
+      )}
       <FormActions busy={busy} onCancel={onCancel} submitLabel={initial ? "Save Changes" : "Add to Backlog"} />
     </form>
   );
@@ -2074,6 +2249,153 @@ function ImportForm({ busy, onSubmit, onCancel }) {
   );
 }
 
+function ImagePicker({ gameName, image, onFindImages, onPick }) {
+  const [term, setTerm] = useState(gameName || "");
+  const [options, setOptions] = useState([]);
+  const [status, setStatus] = useState("idle");
+  const [error, setError] = useState("");
+
+  async function find() {
+    const query = (term || gameName || "").trim();
+    if (!query) {
+      return;
+    }
+    setStatus("loading");
+    setError("");
+    try {
+      const results = await onFindImages(query);
+      setOptions(results);
+      setStatus("done");
+    } catch (searchError) {
+      setError(searchError.message || "Image search failed.");
+      setStatus("error");
+    }
+  }
+
+  return (
+    <div className="imagePicker">
+      <div className="imagePickerHead">
+        <span className="fieldLabel">Cover image</span>
+        {image ? (
+          <button type="button" className="linkButton" onClick={() => onPick("")}>
+            Use auto match
+          </button>
+        ) : null}
+      </div>
+
+      <div className="imagePickerCurrent">
+        {image ? (
+          <img src={image} alt="" className="imagePickerThumb selected" />
+        ) : (
+          <div className="imagePickerEmpty">
+            <ImageIcon size={20} />
+            <span>Auto (default match)</span>
+          </div>
+        )}
+      </div>
+
+      <div className="imagePickerSearch">
+        <input
+          type="text"
+          value={term}
+          placeholder="Refine search (add year / platform)"
+          onChange={(e) => setTerm(e.target.value)}
+        />
+        <button
+          type="button"
+          className="secondaryButton compactButton"
+          onClick={find}
+          disabled={status === "loading"}
+        >
+          {status === "loading" ? <Loader2 className="spin" size={15} /> : <ImageIcon size={15} />}
+          Find images
+        </button>
+      </div>
+
+      {error ? <p className="formError">{error}</p> : null}
+      {status === "done" && options.length === 0 ? (
+        <p className="mutedText">No images found — try refining the search.</p>
+      ) : null}
+
+      {options.length > 0 ? (
+        <div className="imageOptionsGrid">
+          {options.map((option) => (
+            <button
+              type="button"
+              key={option.id}
+              className={`imageOption ${image === option.image ? "selected" : ""}`}
+              onClick={() => onPick(option.image)}
+              title={option.label}
+            >
+              <img src={option.image} alt="" loading="lazy" />
+              <span className="imageOptionLabel">{option.label}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function SubscriptionForm({ initial, busy, onSubmit, onCancel }) {
+  const [values, setValues] = useState(() => ({
+    name: initial?.name ?? "",
+    cost: initial?.cost != null ? String(initial.cost) : "",
+    cycle: initial?.cycle ?? "Monthly"
+  }));
+  const [localError, setLocalError] = useState("");
+
+  function set(key, value) {
+    setValues((current) => ({ ...current, [key]: value }));
+  }
+
+  function submit(event) {
+    event.preventDefault();
+    if (!values.name.trim()) {
+      setLocalError("Name is required.");
+      return;
+    }
+    const cost = Number(values.cost);
+    if (values.cost === "" || !Number.isFinite(cost) || cost < 0) {
+      setLocalError("Cost must be a non-negative number.");
+      return;
+    }
+    setLocalError("");
+    onSubmit({ name: values.name.trim(), cost, cycle: values.cycle });
+  }
+
+  return (
+    <form className="modalForm" onSubmit={submit}>
+      {localError ? <p className="formError">{localError}</p> : null}
+      <label className="fieldGroup">
+        <span>Subscription name</span>
+        <input
+          type="text"
+          value={values.name}
+          placeholder="e.g. Game Pass, PS Plus"
+          onChange={(e) => set("name", e.target.value)}
+          autoFocus
+        />
+      </label>
+      <label className="fieldGroup">
+        <span>Cost</span>
+        <input type="number" min="0" step="0.01" value={values.cost} onChange={(e) => set("cost", e.target.value)} />
+      </label>
+      <label className="fieldGroup">
+        <span>Billing cycle</span>
+        <select value={values.cycle} onChange={(e) => set("cycle", e.target.value)}>
+          {SUBSCRIPTION_CYCLES.map((cycle) => (
+            <option key={cycle} value={cycle}>
+              {cycle}
+            </option>
+          ))}
+        </select>
+      </label>
+      <FormActions busy={busy} onCancel={onCancel} submitLabel={initial ? "Save Changes" : "Add Subscription"} />
+    </form>
+  );
+}
+
 function ConfirmDelete({ message, busy, onConfirm, onCancel }) {
   return (
     <div className="modalForm">
@@ -2128,7 +2450,12 @@ function validateGameValues(values) {
 
 function formatMoney(value) {
   const number = Number(value) || 0;
-  return `$${number.toFixed(2)}`;
+  return number.toLocaleString("en-IN", {
+    style: "currency",
+    currency: "INR",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2
+  });
 }
 
 function statusClass(status) {
