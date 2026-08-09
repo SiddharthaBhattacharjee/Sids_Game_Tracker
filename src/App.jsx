@@ -49,7 +49,7 @@ import {
 import { buildLlmCacheHash, loadCachedLlmData, saveCachedLlmData } from "./services/llmCache";
 import { fetchIgdbGame, fetchIgdbImageOptions, testIgdbConfig } from "./services/igdb";
 import { createStore, storeKind, SUBSCRIPTION_CYCLES, VALID_STATUSES } from "./services/store";
-import { parseGamesCsv } from "./utils/csv";
+import { gamesToCsv, parseGamesCsv } from "./utils/csv";
 import { CHART_COLORS, computeAnalytics, computeCollectionValue, ratingToStars } from "./utils/analytics";
 
 const emptyIgdbState = { enabled: false, status: "disabled", loaded: 0, total: 0, message: "" };
@@ -807,6 +807,19 @@ function AppShell({ config, darkMode, onToggleDarkMode, onSettings }) {
     setReloadToken((token) => token + 1);
   }
 
+  function handleExportCsv() {
+    const csv = gamesToCsv(dataState.games, dataState.backlog);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "sgt-games.csv";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
   async function runAction(fn) {
     setBusy(true);
     setActionError("");
@@ -934,7 +947,13 @@ function AppShell({ config, darkMode, onToggleDarkMode, onSettings }) {
             <RefreshCw size={17} />
             Refresh
           </button>
-          <button className="ghostButton" type="button" onClick={() => downloadConfig(config)}>
+          <button
+            className="ghostButton"
+            type="button"
+            onClick={handleExportCsv}
+            disabled={dataState.status !== "ready"}
+            title="Download all games and backlog as CSV"
+          >
             <Download size={17} />
             Export
           </button>

@@ -1089,7 +1089,9 @@ h1 {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-  margin: 4px 0 24px;
+  margin: 4px auto 24px;
+  max-width: 1180px;
+  width: 100%;
 }
 
 .emptyState {

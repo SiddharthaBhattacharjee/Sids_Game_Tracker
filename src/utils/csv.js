@@ -1,6 +1,35 @@
 export const VALID_STATUSES = ["Finished", "Dropped", "On Hold", "Ongoing"];
 export const IMPORT_COLUMNS = ["game", "platform", "status", "rating", "review"];
 
+function csvEscape(value) {
+  const text = String(value ?? "");
+  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+// Builds a single CSV covering both lists; backlog rows leave play-only fields blank.
+export function gamesToCsv(games = [], backlog = []) {
+  const rows = [["List", "Game", "Platform", "Status", "Rating", "Review", "Price", "Image"]];
+
+  games.forEach((game) => {
+    rows.push([
+      "Played",
+      game.name,
+      game.platform,
+      game.status,
+      game.rating,
+      game.review,
+      game.price,
+      game.image ?? ""
+    ]);
+  });
+
+  backlog.forEach((item) => {
+    rows.push(["Backlog", item.name, item.platform, "", "", "", item.price, item.image ?? ""]);
+  });
+
+  return rows.map((row) => row.map(csvEscape).join(",")).join("\n");
+}
+
 // Low-level RFC-4180-ish CSV parser (handles quotes, escaped quotes, CRLF).
 export function parseCsv(input) {
   const rows = [];
