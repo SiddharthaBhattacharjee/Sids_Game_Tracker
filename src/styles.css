@@ -1625,3 +1625,30 @@ h1 {
     width: 100%;
   }
 }
+
+/* Player preference list */
+.preferenceList {
+  color: var(--ink);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.preferenceList li {
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  padding-left: 24px;
+  position: relative;
+}
+
+.preferenceList li::before {
+  color: var(--teal);
+  content: "▸";
+  font-size: 0.9rem;
+  left: 4px;
+  position: absolute;
+  top: 1px;
+}

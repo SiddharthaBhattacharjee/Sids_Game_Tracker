@@ -83,7 +83,8 @@ function normalizeCachedData(data) {
     recommendationsItems: recommendationsItems
       .map((item) => ({
         game: String(item?.game ?? "").trim(),
-        reasoning: String(item?.reasoning ?? item?.reason ?? "").trim()
+        reasoning: String(item?.reasoning ?? item?.reason ?? "").trim(),
+        image: String(item?.image ?? "").trim()
       }))
       .filter((item) => item.game && hasCompleteGeneratedText(item.reasoning))
   };

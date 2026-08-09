@@ -98,11 +98,11 @@ export async function extendPreferences(config, games, enrichments, existingPref
   return mergePreferenceContinuation(existingText, content);
 }
 
-export async function generateRecommendations(config, games, preferenceSignals, signal) {
+export async function generateRecommendations(config, games, preferenceSignals, signal, avoidNames = []) {
   // Add delay to avoid rate limiting (especially important after preferences extraction)
   await new Promise((resolve) => setTimeout(resolve, 1500));
   
-  const existingGames = games.map((game) => game.name);
+  const existingGames = [...games.map((game) => game.name), ...avoidNames];
   const content = await callChatCompletion({
     label: "recommendations",
     config,
@@ -172,12 +172,13 @@ export async function generateMoreRecommendations(
   games,
   preferenceSignals,
   existingRecommendations,
-  signal
+  signal,
+  avoidNames = []
 ) {
   // Add delay to avoid rate limiting
   await new Promise((resolve) => setTimeout(resolve, 1500));
 
-  const existingGames = games.map((game) => game.name);
+  const existingGames = [...games.map((game) => game.name), ...avoidNames];
   const alreadyRecommended = (existingRecommendations ?? []).map((item) => item.game);
   const content = await callChatCompletion({
     label: "recommendation-extension",

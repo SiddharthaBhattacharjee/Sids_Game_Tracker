@@ -548,7 +548,6 @@ function AppShell({ config, darkMode, onToggleDarkMode, onSettings }) {
   const [preferences, setPreferences] = useState(waitingPreferences);
   const [recommendations, setRecommendations] = useState(waitingRecommendations);
   const [recommendationEnrichments, setRecommendationEnrichments] = useState({});
-  const [recImageOverrides, setRecImageOverrides] = useState({});
   const [llmCacheState, setLlmCacheState] = useState({ status: "idle", hash: "", data: null });
   const manualLlmInFlightRef = useRef(false);
 
@@ -561,7 +560,6 @@ function AppShell({ config, darkMode, onToggleDarkMode, onSettings }) {
     setPreferences(waitingPreferences);
     setRecommendations(waitingRecommendations);
     setRecommendationEnrichments({});
-    setRecImageOverrides({});
     setLlmCacheState({ status: "idle", hash: "", data: null });
 
     Promise.all([store.listGames(), store.listBacklog(), store.listSubscriptions()])
@@ -738,7 +736,13 @@ function AppShell({ config, darkMode, onToggleDarkMode, onSettings }) {
     }
     const controller = new AbortController();
     setRecommendations({ status: "loading", items: [], error: "" });
-    generateRecommendations(config, dataState.games, preferences.text, controller.signal)
+    generateRecommendations(
+      config,
+      dataState.games,
+      preferences.text,
+      controller.signal,
+      dataState.backlog.map((entry) => entry.name)
+    )
       .then((items) => {
         setRecommendations({ status: "ready", items, error: "" });
         saveAndHydrateLlmCache({ preferencesText: preferences.text, recommendationsItems: items });
@@ -830,8 +834,16 @@ function AppShell({ config, darkMode, onToggleDarkMode, onSettings }) {
   const handleUpdateSubscription = (id, values) => runAction(() => store.updateSubscription(id, values));
   const handleDeleteSubscription = (id) => runAction(() => store.deleteSubscription(id));
   const findImageOptions = (term, signal) => fetchIgdbImageOptions(term, config, signal);
-  const handlePickRecImage = (game, url) =>
-    setRecImageOverrides((current) => ({ ...current, [game]: url }));
+  function handleEditRec(originalGame, values) {
+    const name = String(values.name ?? "").trim() || originalGame;
+    const nextItems = recommendations.items.map((item) =>
+      item.game === originalGame ? { ...item, game: name, image: values.image || "" } : item
+    );
+    setRecommendations({ status: "ready", items: nextItems, error: "" });
+    saveAndHydrateLlmCache({ preferencesText: preferences.text, recommendationsItems: nextItems });
+    setModal(null);
+    setActionError("");
+  }
 
   async function regeneratePreferences() {
     manualLlmInFlightRef.current = true;
@@ -856,10 +868,15 @@ function AppShell({ config, darkMode, onToggleDarkMode, onSettings }) {
     manualLlmInFlightRef.current = true;
     setRecommendations({ status: "loading", items: [], error: "" });
     setRecommendationEnrichments({});
-    setRecImageOverrides({});
     const controller = new AbortController();
     try {
-      const items = await generateRecommendations(config, dataState.games, preferences.text, controller.signal);
+      const items = await generateRecommendations(
+        config,
+        dataState.games,
+        preferences.text,
+        controller.signal,
+        dataState.backlog.map((entry) => entry.name)
+      );
       setRecommendations({ status: "ready", items, error: "" });
       saveAndHydrateLlmCache({ preferencesText: preferences.text, recommendationsItems: items });
     } catch (error) {
@@ -881,7 +898,8 @@ function AppShell({ config, darkMode, onToggleDarkMode, onSettings }) {
         dataState.games,
         preferences.text,
         recommendations.items,
-        controller.signal
+        controller.signal,
+        dataState.backlog.map((entry) => entry.name)
       );
       const merged = mergeRecommendationItems(recommendations.items, nextItems);
       setRecommendations({ status: "ready", items: merged, error: "" });
@@ -993,19 +1011,13 @@ function AppShell({ config, darkMode, onToggleDarkMode, onSettings }) {
               <RecommendationSection
                 state={recommendations}
                 enrichments={recommendationEnrichments}
-                imageOverrides={recImageOverrides}
                 igdbActive={igdbOn && ["ready", "warning"].includes(igdbState.status)}
                 blocked={preferences.status !== "ready"}
                 onRegenerate={regenerateRecommendations}
                 canRegenerate={preferences.status === "ready" && recommendations.status !== "loading"}
                 onExtend={extendRecommendations}
                 canExtend={preferences.status === "ready" && recommendations.status === "ready"}
-                onEditImage={(item) =>
-                  setModal({
-                    type: "recImage",
-                    payload: { game: item.game, currentImage: recImageOverrides[item.game] || "" }
-                  })
-                }
+                onEditItem={(item) => setModal({ type: "editRec", payload: item })}
               />
             </>
           ) : null}
@@ -1048,7 +1060,7 @@ function AppShell({ config, darkMode, onToggleDarkMode, onSettings }) {
           onAddSubscription={handleAddSubscription}
           onUpdateSubscription={handleUpdateSubscription}
           onDeleteSubscription={handleDeleteSubscription}
-          onPickRecImage={handlePickRecImage}
+          onEditRec={handleEditRec}
         />
       ) : null}
     </main>
@@ -1716,7 +1728,7 @@ function PreferenceSection({ state, waiting, onRegenerate, canRegenerate }) {
       />
       <article className="llmPanel">
         {state.status === "ready" ? (
-          <div className="llmText">{state.text}</div>
+          <PreferenceContent text={state.text} />
         ) : state.status === "error" ? (
           <InlineError message={state.error} onRetry={onRegenerate} />
         ) : (
@@ -1727,17 +1739,42 @@ function PreferenceSection({ state, waiting, onRegenerate, canRegenerate }) {
   );
 }
 
+function PreferenceContent({ text }) {
+  const bullets = parsePreferenceBullets(text);
+
+  if (bullets.length === 0) {
+    return <div className="llmText">{text}</div>;
+  }
+
+  return (
+    <ul className="preferenceList">
+      {bullets.map((bullet, index) => (
+        <li key={index}>{bullet}</li>
+      ))}
+    </ul>
+  );
+}
+
+function parsePreferenceBullets(text) {
+  return String(text ?? "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => /^([-*•]|\d+[.)])\s+/.test(line))
+    .map((line) => line.replace(/^([-*•]|\d+[.)])\s+/, "").trim())
+    .filter(Boolean);
+}
+
 function RecommendationSection({
   state,
   enrichments,
-  imageOverrides,
   igdbActive,
   blocked,
   onRegenerate,
   canRegenerate,
   onExtend,
   canExtend,
-  onEditImage
+  onEditItem
 }) {
   return (
     <section className="contentSection">
@@ -1760,9 +1797,8 @@ function RecommendationSection({
                 key={item.game}
                 item={item}
                 enrichment={enrichments[item.game]}
-                overrideImage={imageOverrides?.[item.game]}
                 igdbActive={igdbActive}
-                onEditImage={() => onEditImage(item)}
+                onEdit={() => onEditItem(item)}
               />
             ))}
           </div>
@@ -1809,14 +1845,14 @@ function ExtendButton({ loading, disabled, onClick, title }) {
   );
 }
 
-function RecommendationCard({ item, enrichment, overrideImage, igdbActive, onEditImage }) {
+function RecommendationCard({ item, enrichment, igdbActive, onEdit }) {
   return (
     <article className={`recommendationCard ${igdbActive ? "" : "noCover"}`}>
       {igdbActive ? (
         <div className="recCover">
-          <CoverSlot image={overrideImage} enrichment={enrichment} loading={!enrichment && !overrideImage} />
-          <button className="recImageBtn" type="button" title="Pick a better image" onClick={onEditImage}>
-            <ImageIcon size={13} />
+          <CoverSlot image={item.image} enrichment={enrichment} loading={!enrichment && !item.image} />
+          <button className="recImageBtn" type="button" title="Edit name / image" onClick={onEdit}>
+            <Pencil size={13} />
           </button>
         </div>
       ) : null}
@@ -1893,7 +1929,7 @@ function ModalHost({
   onAddSubscription,
   onUpdateSubscription,
   onDeleteSubscription,
-  onPickRecImage
+  onEditRec
 }) {
   let title = "";
   let body = null;
@@ -1937,15 +1973,15 @@ function ModalHost({
   } else if (modal.type === "import") {
     title = "Import Games from CSV";
     body = <ImportForm busy={busy} onSubmit={onImport} onCancel={onClose} />;
-  } else if (modal.type === "recImage") {
-    title = "Pick Cover Image";
+  } else if (modal.type === "editRec") {
+    title = "Edit Recommendation";
     body = (
-      <RecImagePicker
-        game={modal.payload.game}
-        currentImage={modal.payload.currentImage}
+      <RecEditForm
+        initial={modal.payload}
+        igdbConfigured={igdbConfigured}
         onFindImages={onFindImages}
-        onPick={(url) => onPickRecImage(modal.payload.game, url)}
-        onClose={onClose}
+        onSubmit={(values) => onEditRec(modal.payload.game, values)}
+        onCancel={onClose}
       />
     );
   } else if (modal.type === "subscription") {
@@ -2299,27 +2335,36 @@ function ImportForm({ busy, onSubmit, onCancel }) {
   );
 }
 
-function RecImagePicker({ game, currentImage, onFindImages, onPick, onClose }) {
-  const [image, setImage] = useState(currentImage || "");
+function RecEditForm({ initial, igdbConfigured, onFindImages, onSubmit, onCancel }) {
+  const [name, setName] = useState(initial.game ?? "");
+  const [image, setImage] = useState(initial.image ?? "");
+  const [localError, setLocalError] = useState("");
+
+  function submit(event) {
+    event.preventDefault();
+    if (!name.trim()) {
+      setLocalError("Name is required.");
+      return;
+    }
+    setLocalError("");
+    onSubmit({ name: name.trim(), image });
+  }
 
   return (
-    <div className="modalForm">
-      <ImagePicker
-        gameName={game}
-        image={image}
-        onFindImages={onFindImages}
-        onPick={(url) => {
-          setImage(url);
-          onPick(url);
-        }}
-      />
-      <div className="formActions">
-        <button className="primaryButton" type="button" onClick={onClose}>
-          <CheckCircle2 size={16} />
-          Done
-        </button>
-      </div>
-    </div>
+    <form className="modalForm" onSubmit={submit}>
+      {localError ? <p className="formError">{localError}</p> : null}
+      <p className="setupHint">
+        Fix the name so IGDB matches the right game (covers/genres re-fetch), and optionally pick a cover.
+      </p>
+      <label className="fieldGroup">
+        <span>Game name</span>
+        <input type="text" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+      </label>
+      {igdbConfigured ? (
+        <ImagePicker gameName={name} image={image} onFindImages={onFindImages} onPick={(url) => setImage(url)} />
+      ) : null}
+      <FormActions busy={false} onCancel={onCancel} submitLabel="Save Changes" />
+    </form>
   );
 }
 
