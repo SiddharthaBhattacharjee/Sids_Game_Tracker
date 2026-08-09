@@ -1586,3 +1586,42 @@ h1 {
     grid-template-columns: 1fr;
   }
 }
+
+/* Recommendation card image override button */
+.recCover {
+  position: relative;
+}
+
+.recImageBtn {
+  align-items: center;
+  background: rgba(0, 0, 0, 0.6);
+  border: none;
+  border-radius: 6px;
+  color: #fff;
+  cursor: pointer;
+  display: inline-flex;
+  height: 24px;
+  justify-content: center;
+  opacity: 0.85;
+  position: absolute;
+  right: 5px;
+  top: 5px;
+  transition: opacity 0.15s ease;
+  width: 24px;
+}
+
+.recImageBtn:hover {
+  opacity: 1;
+}
+
+/* Keep the picker's search input and button on separate lines when narrow */
+@media (max-width: 560px) {
+  .imagePickerSearch {
+    flex-direction: column;
+  }
+
+  .imagePickerSearch button {
+    justify-content: center;
+    width: 100%;
+  }
+}
